@@ -6,7 +6,11 @@ use std::collections::HashMap;
 use regex::Regex;
 use std::sync::LazyLock;
 use std::time::Instant;
+use warp::Filter;
+use tokio::task;
+use http::StatusCode;
 
+#[derive(Clone)]
 struct DataSources {
     name: String,
     as_sets: HashMap<String, AsSet>,
@@ -14,6 +18,7 @@ struct DataSources {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 struct AsSet {
     asns: Vec<String>,
     as_sets: Vec<String>,
@@ -29,6 +34,7 @@ impl AsSet {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 struct ASN {
     prefixes: Vec<String>,
 }
@@ -39,7 +45,6 @@ static ASSET_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*[:]+)?AS
 impl DataSources {
     
     fn new(name: String) -> Self {
-
         Self {
             name: name,
             as_sets: HashMap::new(),
@@ -58,7 +63,7 @@ impl DataSources {
         let mut obj_num = 0;
 
         for line in reader.lines() {
-            if obj_num > 1000000 { // DEBUG
+            if obj_num > 100000 { // DEBUG
                 //break;
             }
             let l = line.unwrap_or_else(|err| {
@@ -173,48 +178,66 @@ impl DataSources {
 
 }
 
-fn main() {
+fn initData() -> DataSources {
     println!("Hello, poof!");
+    println!("initializing data..");
 
     let mut ripe = DataSources::new(String::from("RIPE"));
-
     let _ = ripe.import_from_file(String::from("data/ripe.db"));
-
-    println!("\nquerying some data...");
-    let i = "AS-WOBCOM";
-
-    let old_time = Instant::now();
-    if let Some(value) = ripe.query_as_set_recursive(i.to_string(), 10) {
-        println!("Resursive AS-SET resolution of '{}' in {}μs", i, old_time.elapsed().as_micros());
-        println!("{:#?}", value);
-    } else {
-        println!("Value for '{}' not found in cache.", i);
-    }
     
-    let old_time = Instant::now();
-    if let Some(value) = ripe.query_as_set_prefixes_recursive(i.to_string(), 10) {
-        println!("Recursed route resolution for '{}' in {}μs", i, old_time.elapsed().as_micros());
-        println!("{:#?}", value);
-    } else {
-        println!("Value for '{}' not found in cache.", i);
-    }
+    println!("Ready to serve your requests!");
     
+    return ripe;
+}
 
-    let i = "AS1299:AS-TWELVE99";
+async fn get_route_from_as_set(name: String, data: DataSources) -> Result<impl warp::Reply, warp::Rejection> {
+    let old_time = Instant::now();
+    if let Some(value) = data.query_as_set_prefixes_recursive(name.to_string(), 10) {
+        Ok(warp::reply::with_status(
+            format!("# Recursed route resolution for '{}' in {}μs, {} items\n{:#?}", name, old_time.elapsed().as_micros(), value.len(), value),
+            StatusCode::OK,
+        ))
+    } else {
+        Ok(warp::reply::with_status(
+            format!("Value for '{}' not found in cache.", name),
+            StatusCode::NOT_FOUND,
+        ))
+    }
+}
 
+async fn get_asn_from_as_set(name: String, data: DataSources) -> Result<impl warp::Reply, warp::Rejection> {
     let old_time = Instant::now();
-    if let Some(value) = ripe.query_as_set_recursive(i.to_string(), 10) {
-        println!("Resursive AS-SET resolution of '{}' in {}μs, {} items", i, old_time.elapsed().as_micros(), value.len());
-        //println!("{:#?}", value);
+    if let Some(value) = data.query_as_set_recursive(name.to_string(), 10) {
+        Ok(warp::reply::with_status(
+            format!("# Recursed AS-Set resolution for '{}' in {}μs, {} items\n{:#?}", name, old_time.elapsed().as_micros(), value.len(), value),
+            StatusCode::OK,
+        ))
     } else {
-        println!("Value for '{}' not found in cache.", i);
+        Ok(warp::reply::with_status(
+            format!("Value for '{}' not found in cache.", name),
+            StatusCode::NOT_FOUND,
+        ))
     }
-    
-    let old_time = Instant::now();
-    if let Some(value) = ripe.query_as_set_prefixes_recursive(i.to_string(), 10) {
-        println!("Recursed route resolution for '{}' in {}μs, {} items", i, old_time.elapsed().as_micros(), value.len());
-        //println!("{:#?}", value);
-    } else {
-        println!("Value for '{}' not found in cache.", i);
-    }
+
+}
+
+#[tokio::main]
+async fn main() {
+
+    let mut data = task::spawn_blocking(|| {initData()}).await.unwrap();
+
+    let data_moved = warp::any().map(move || data.clone());
+
+    let routes = warp::get()
+        .and(warp::path!("api" / "v1" / "asnsFromAsSet" / String))
+        .and(data_moved.clone())
+        .and_then(get_asn_from_as_set);
+    let routes2 = warp::get()
+        .and(warp::path!("api" / "v1" / "routesFromAsSet" / String))
+        .and(data_moved.clone())
+        .and_then(get_route_from_as_set);
+
+    warp::serve(routes.or(routes2))
+        .run(([127, 0, 0, 1], 3030))
+        .await;
 }
