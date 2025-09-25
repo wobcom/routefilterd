@@ -11,10 +11,16 @@ use tokio::task;
 use http::StatusCode;
 
 #[derive(Clone)]
-struct DataSources {
-    name: String,
-    as_sets: HashMap<String, AsSet>,
-    routes: HashMap<String, ASN>,
+struct PoofData {
+    datasources: HashMap<String, DataSource>,
+    as_sets: HashMap<(String, String), AsSet>,
+    as_routes: HashMap<(String, String), AsRoutes>,
+}
+
+#[derive(Clone)]
+struct DataSource {
+    serial: u64,
+    priority: i64,
 }
 
 #[derive(Debug)]
@@ -35,24 +41,38 @@ impl AsSet {
 
 #[derive(Debug)]
 #[derive(Clone)]
-struct ASN {
+struct AsRoutes {
     prefixes: Vec<String>,
 }
 
 static ASN_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^AS[0-9]+$").unwrap());
 static ASSET_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*[:]+)?AS-|as-[a-zA-Z][^ ]*$").unwrap());
 
-impl DataSources {
-    
-    fn new(name: String) -> Self {
+impl PoofData {
+    fn new() -> Self {
         Self {
-            name: name,
+            datasources: HashMap::new(),
             as_sets: HashMap::new(),
-            routes: HashMap::new(),
+            as_routes: HashMap::new(),
         }
     }
 
-    fn import_from_file(&mut self, filename: String) -> Result<(), String> {
+    fn newDataSource(&mut self, name: String, serial: u64, priority: i64) {
+        self.datasources.insert(
+            name,
+            DataSource {
+                serial: serial,
+                priority: priority,
+            },
+        );
+    }
+
+    fn getSortedDataSources(&self, exclude: Vec<String>) -> Vec<String> {
+        // TODO: Data source sorting
+        self.datasources.iter().filter(|(s, _)| !exclude.contains(s)).map(|(s, _)| s.clone()).collect()
+    }
+
+    fn import_from_file(&mut self, data_source: String, filename: String) -> Result<(), String> {
         let file = File::open(filename.clone()).expect("Couldn't open file");
         let reader = BufReader::new(file);
 
@@ -98,12 +118,13 @@ impl DataSources {
                         let members = result.get("members");
                         let asns: Vec<String> = members.clone().into_iter().filter(|i| Self::_is_asn(i)).map(|s| s.to_uppercase().to_string()).collect();
                         let assets: Vec<String> = members.clone().into_iter().filter(|i| Self::_is_as_set(i)).map(|s| s.to_uppercase().to_string()).collect();
-                        self.as_sets.insert(obj_name, AsSet { asns: asns, as_sets: assets });
+                        self.as_sets.insert((data_source.clone(), obj_name), AsSet { asns: asns, as_sets: assets });
+                        // TODO: Normalize AS-Set Data further (casing, IRR:: prefixes, on/two colons, etc.)
                     }
                     "route" | "route6" => {
                         let origins = result.get("origin");
                         for i in origins {
-                            self.routes.entry(i.to_uppercase().to_string()).and_modify(|asn| asn.prefixes.push(obj_name.to_string())).or_insert(ASN { prefixes: vec![obj_name.to_string()] });
+                            self.as_routes.entry((data_source.clone(), i.to_uppercase().to_string())).and_modify(|asn| asn.prefixes.push(obj_name.to_string())).or_insert(AsRoutes { prefixes: vec![obj_name.to_string()] });
                             //println!("Installed #{} {}: {} in {}", obj_num, obj_type, obj_name, i);
                         }
                     }
@@ -119,34 +140,42 @@ impl DataSources {
         }
 
         println!("Successfully parsed {} lines into {} objects.", line_num, obj_num);
-        println!("Processed {} in {}ms", filename.clone(), old_time.elapsed().as_millis());
+        println!("Processed {} in {}ms", filename, old_time.elapsed().as_millis());
         Ok(())
     }
 
-
-    fn _is_asn(v: &str) -> bool {
+    pub fn _is_asn(v: &str) -> bool {
         ASN_REGEX.is_match(v)
     }
 
-    fn _is_as_set(v: &str) -> bool {
+    pub fn _is_as_set(v: &str) -> bool {
         // TODO: Compile regex once
         ASSET_REGEX.is_match(v)
     }
 
-
-    fn query_asn(&self, asn: String) -> Option<&ASN> {
-        self.routes.get(&asn)
+    pub fn query_asn(&self, data_sources: Vec<String>, asn: String) -> Option<&AsRoutes> {
+        for data_source in data_sources {
+            if let Some(res) = self.as_routes.get(&(data_source, asn.clone())) {
+                return Some(res);
+            }
+        }
+        return None;
     }
     
-    fn query_as_set(&self, as_set: String) -> Option<&AsSet> {
-        self.as_sets.get(&as_set.to_uppercase())
+    pub fn query_as_set(&self, data_sources: Vec<String>, as_set: String) -> Option<&AsSet> {
+        for data_source in data_sources {
+            if let Some(res) = self.as_sets.get(&(data_source, as_set.to_uppercase())) {
+                return Some(res);
+            }
+        }
+        return None;
     }
 
-    fn query_as_set_recursive(&self, as_set: String, depth: u32) -> Option<Vec<String>> {
+    pub fn query_as_set_recursive(&self, as_set: String, depth: u32) -> Option<Vec<String>> {
         self._query_as_set_recursive(as_set, depth, &mut vec![String::from("AS-LOREMIPSUM")])
     }
 
-    fn _query_as_set_recursive(&self, as_set: String, depth: u32, ignore_as_sets: &mut Vec<String>) -> Option<Vec<String>> {
+    pub fn _query_as_set_recursive(&self, as_set: String, depth: u32, ignore_as_sets: &mut Vec<String>) -> Option<Vec<String>> {
         if depth == 0 || ignore_as_sets.contains(&as_set) {
             return None;
         }
@@ -154,8 +183,9 @@ impl DataSources {
 
         // TODO: yeah, uh
         let dummy = AsSet::new();
+        let data_sources = self.getSortedDataSources(vec![]);
 
-        let res = self.query_as_set(as_set).unwrap_or(&dummy);
+        let res = self.query_as_set(data_sources, as_set).unwrap_or(&dummy);
         let mut as_list = res.asns.clone();
         
         for a in res.as_sets.clone() {
@@ -165,12 +195,17 @@ impl DataSources {
         Some(as_list)
     }
 
-    fn query_as_set_prefixes_recursive(&self, as_set: String, depth: u32) -> Option<Vec<String>> {
+    pub fn query_as_set_prefixes_recursive(&self, as_set: String, depth: u32) -> Option<Vec<String>> {
         let as_list = self.query_as_set_recursive(as_set, depth).unwrap();
         let mut prefixes: Vec<String> = vec![];
+        let data_sources = self.getSortedDataSources(vec![]);
 
         for asn in as_list {
-            prefixes.append(&mut self.query_asn(asn).unwrap_or(&ASN { prefixes: vec![] }).prefixes.clone());
+            prefixes.append(
+                &mut self.query_asn(data_sources.clone(), asn)
+                .unwrap_or(&AsRoutes { prefixes: vec![] })
+                .prefixes
+                .clone());
         }
 
         Some(prefixes)
@@ -178,21 +213,9 @@ impl DataSources {
 
 }
 
-fn initData() -> DataSources {
-    println!("Hello, poof!");
-    println!("initializing data..");
-
-    let mut ripe = DataSources::new(String::from("RIPE"));
-    let _ = ripe.import_from_file(String::from("data/ripe.db"));
-    
-    println!("Ready to serve your requests!");
-    
-    return ripe;
-}
-
-async fn get_route_from_as_set(name: String, data: DataSources) -> Result<impl warp::Reply, warp::Rejection> {
+async fn get_route_from_as_set(name: String, data: PoofData) -> Result<impl warp::Reply, warp::Rejection> {
     let old_time = Instant::now();
-    if let Some(value) = data.query_as_set_prefixes_recursive(name.to_string(), 10) {
+    if let Some(value) = data.query_as_set_prefixes_recursive(name.to_string(), 25) {
         Ok(warp::reply::with_status(
             format!("# Recursed route resolution for '{}' in {}μs, {} items\n{:#?}", name, old_time.elapsed().as_micros(), value.len(), value),
             StatusCode::OK,
@@ -205,9 +228,9 @@ async fn get_route_from_as_set(name: String, data: DataSources) -> Result<impl w
     }
 }
 
-async fn get_asn_from_as_set(name: String, data: DataSources) -> Result<impl warp::Reply, warp::Rejection> {
+async fn get_asn_from_as_set(name: String, data: PoofData) -> Result<impl warp::Reply, warp::Rejection> {
     let old_time = Instant::now();
-    if let Some(value) = data.query_as_set_recursive(name.to_string(), 10) {
+    if let Some(value) = data.query_as_set_recursive(name.to_string(), 25) {
         Ok(warp::reply::with_status(
             format!("# Recursed AS-Set resolution for '{}' in {}μs, {} items\n{:#?}", name, old_time.elapsed().as_micros(), value.len(), value),
             StatusCode::OK,
@@ -223,8 +246,38 @@ async fn get_asn_from_as_set(name: String, data: DataSources) -> Result<impl war
 
 #[tokio::main]
 async fn main() {
+    println!("Hello, poof!");
+    println!("initializing data..");
 
-    let mut data = task::spawn_blocking(|| {initData()}).await.unwrap();
+
+    let mut data = task::spawn_blocking(move || {
+        let mut poof = PoofData::new();
+        poof.newDataSource(String::from("RIPE"), 0, 100);
+        let _ = poof.import_from_file(String::from("RIPE"), String::from("data/ripe.db"));
+        poof.newDataSource(String::from("ARIN"), 0, 100);
+        let _ = poof.import_from_file(String::from("ARIN"), String::from("data/arin.db"));
+        poof.newDataSource(String::from("RADB"), 0, 100);
+        let _ = poof.import_from_file(String::from("RADB"), String::from("data/radb.db"));
+        poof.newDataSource(String::from("LACNIC"), 0, 100);
+        let _ = poof.import_from_file(String::from("LACNIC"), String::from("data/lacnic.db"));
+        poof.newDataSource(String::from("NTT"), 0, 100);
+        let _ = poof.import_from_file(String::from("NTT"), String::from("data/nttcom.db"));
+        poof.newDataSource(String::from("AFRINIC"), 0, 100);
+        let _ = poof.import_from_file(String::from("AFRINIC"), String::from("data/afrinic.db"));
+        poof.newDataSource(String::from("LEVEL3"), 0, 100);
+        let _ = poof.import_from_file(String::from("LEVEL3"), String::from("data/level3.db"));
+        poof.newDataSource(String::from("ALTDB"), 0, 100);
+        let _ = poof.import_from_file(String::from("ALTDB"), String::from("data/altdb.db"));
+        poof.newDataSource(String::from("IDNIC"), 0, 100);
+        let _ = poof.import_from_file(String::from("IDNIC"), String::from("data/idnic.db"));
+        poof.newDataSource(String::from("APNIC"), 0, 100);
+        let _ = poof.import_from_file(String::from("APNIC"), String::from("data/apnic.db.route"));
+        let _ = poof.import_from_file(String::from("APNIC"), String::from("data/apnic.db.route6"));
+        let _ = poof.import_from_file(String::from("APNIC"), String::from("data/apnic.db.as-set"));
+
+        println!("Ready to serve your requests!");
+        poof
+    }).await.unwrap();
 
     let data_moved = warp::any().map(move || data.clone());
 
