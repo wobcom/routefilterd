@@ -1,0 +1,12 @@
+[api]
+listenAddress = "[::]:1337"
+
+[dataSources.RIPE]
+importSources = ["data/ripe.db"]
+importSerial = "https://ftp.ripe.net/ripe/dbase/RIPE.CURRENTSERIAL"
+nrtmAddress = "whois.ripe.net:4444"
+priority = 500
+
+#[dataSources.ARIN]
+#rpslFiles = ["data/arin.db"]
+#priority = 400

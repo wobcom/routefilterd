@@ -1,6 +1,7 @@
-use std::fs::File;
+use std::fs::{File, read_to_string};
 use std::io::BufReader;
 use std::io::BufRead;
+use std::net::SocketAddr;
 use rpsl::parse_object;
 use std::collections::HashMap;
 use regex::Regex;
@@ -9,6 +10,36 @@ use std::time::Instant;
 use warp::Filter;
 use tokio::task;
 use http::StatusCode;
+use serde::Deserialize;
+
+
+#[derive(Deserialize)]
+struct Config {
+    api: ConfigAPI,
+    dataSources: HashMap<String, ConfigDataSources>,
+}
+
+#[derive(Deserialize)]
+struct ConfigAPI {
+    listenAddress: String,
+}
+
+#[derive(Deserialize)]
+struct ConfigDataSources {
+    importSources: Vec<String>,
+    importSerial: Option<String>,
+    nrtmHost: Option<String>,
+    #[serde(default)]
+    serial: u64,
+    #[serde(default)]
+    priority: i64,
+}
+
+fn parseConfig(filename: String) -> Config {
+    let contents = read_to_string(filename).expect("Could not open config file");
+    toml::from_str(&contents).expect("Could not parse config file")
+}
+
 
 #[derive(Clone)]
 struct PoofData {
@@ -84,7 +115,7 @@ impl PoofData {
 
         for line in reader.lines() {
             if obj_num > 100000 { // DEBUG
-                //break;
+                break;
             }
             let l = line.unwrap_or_else(|err| {
                 //println!("Error encountered in line {}: {}", line_num, err);
@@ -249,31 +280,22 @@ async fn main() {
     println!("Hello, poof!");
     println!("initializing data..");
 
+    let config = parseConfig(String::from("config.toml"));
 
     let mut data = task::spawn_blocking(move || {
         let mut poof = PoofData::new();
-        poof.newDataSource(String::from("RIPE"), 0, 100);
-        let _ = poof.import_from_file(String::from("RIPE"), String::from("data/ripe.db"));
-        poof.newDataSource(String::from("ARIN"), 0, 100);
-        let _ = poof.import_from_file(String::from("ARIN"), String::from("data/arin.db"));
-        poof.newDataSource(String::from("RADB"), 0, 100);
-        let _ = poof.import_from_file(String::from("RADB"), String::from("data/radb.db"));
-        poof.newDataSource(String::from("LACNIC"), 0, 100);
-        let _ = poof.import_from_file(String::from("LACNIC"), String::from("data/lacnic.db"));
-        poof.newDataSource(String::from("NTT"), 0, 100);
-        let _ = poof.import_from_file(String::from("NTT"), String::from("data/nttcom.db"));
-        poof.newDataSource(String::from("AFRINIC"), 0, 100);
-        let _ = poof.import_from_file(String::from("AFRINIC"), String::from("data/afrinic.db"));
-        poof.newDataSource(String::from("LEVEL3"), 0, 100);
-        let _ = poof.import_from_file(String::from("LEVEL3"), String::from("data/level3.db"));
-        poof.newDataSource(String::from("ALTDB"), 0, 100);
-        let _ = poof.import_from_file(String::from("ALTDB"), String::from("data/altdb.db"));
-        poof.newDataSource(String::from("IDNIC"), 0, 100);
-        let _ = poof.import_from_file(String::from("IDNIC"), String::from("data/idnic.db"));
-        poof.newDataSource(String::from("APNIC"), 0, 100);
-        let _ = poof.import_from_file(String::from("APNIC"), String::from("data/apnic.db.route"));
-        let _ = poof.import_from_file(String::from("APNIC"), String::from("data/apnic.db.route6"));
-        let _ = poof.import_from_file(String::from("APNIC"), String::from("data/apnic.db.as-set"));
+        for (name,options) in config.dataSources {
+            poof.newDataSource(name.clone(), options.serial, options.priority);
+            for file in options.importSources {
+                if file.clone().starts_with("ftp://") {
+                    println!("FTP data source not implemented yet")
+                }
+                if file.clone().starts_with("http://") || file.clone().starts_with("https://") {
+                    println!("http(s) data source not implemented yet")
+                }
+                let _ = poof.import_from_file(name.clone(), file.clone());
+            }
+        }
 
         println!("Ready to serve your requests!");
         poof
@@ -290,7 +312,10 @@ async fn main() {
         .and(data_moved.clone())
         .and_then(get_route_from_as_set);
 
+    let listenAddress: SocketAddr = config.api.listenAddress.parse()
+        .expect("Unable to parse socket address");
+
     warp::serve(routes.or(routes2))
-        .run(([127, 0, 0, 1], 3030))
+        .run(listenAddress)
         .await;
 }
