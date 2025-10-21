@@ -1,17 +1,16 @@
-use std::fs::{File, read_to_string};
-use std::io::BufReader;
-use std::io::BufRead;
-use std::net::SocketAddr;
-use rpsl::parse_object;
-use std::collections::HashMap;
+use http::StatusCode;
 use regex::Regex;
+use rpsl::parse_object;
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::fs::{File, read_to_string};
+use std::io::BufRead;
+use std::io::BufReader;
+use std::net::SocketAddr;
 use std::sync::LazyLock;
 use std::time::Instant;
-use warp::Filter;
 use tokio::task;
-use http::StatusCode;
-use serde::Deserialize;
-
+use warp::Filter;
 
 #[derive(Deserialize)]
 struct Config {
@@ -40,7 +39,6 @@ fn parseConfig(filename: String) -> Config {
     toml::from_str(&contents).expect("Could not parse config file")
 }
 
-
 #[derive(Clone)]
 struct PoofData {
     datasources: HashMap<String, DataSource>,
@@ -54,8 +52,7 @@ struct DataSource {
     priority: i64,
 }
 
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct AsSet {
     asns: Vec<String>,
     as_sets: Vec<String>,
@@ -70,14 +67,14 @@ impl AsSet {
     }
 }
 
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct AsRoutes {
     prefixes: Vec<String>,
 }
 
 static ASN_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^AS[0-9]+$").unwrap());
-static ASSET_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*[:]+)?AS-|as-[a-zA-Z][^ ]*$").unwrap());
+static ASSET_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(.*[:]+)?AS-|as-[a-zA-Z][^ ]*$").unwrap());
 
 impl PoofData {
     fn new() -> Self {
@@ -100,7 +97,11 @@ impl PoofData {
 
     fn getSortedDataSources(&self, exclude: Vec<String>) -> Vec<String> {
         // TODO: Data source sorting
-        self.datasources.iter().filter(|(s, _)| !exclude.contains(s)).map(|(s, _)| s.clone()).collect()
+        self.datasources
+            .iter()
+            .filter(|(s, _)| !exclude.contains(s))
+            .map(|(s, _)| s.clone())
+            .collect()
     }
 
     fn import_from_file(&mut self, data_source: String, filename: String) -> Result<(), String> {
@@ -114,7 +115,8 @@ impl PoofData {
         let mut obj_num = 0;
 
         for line in reader.lines() {
-            if obj_num > 100000 { // DEBUG
+            if obj_num > 100000 {
+                // DEBUG
                 break;
             }
             let l = line.unwrap_or_else(|err| {
@@ -147,15 +149,36 @@ impl PoofData {
                     "as-set" => {
                         //println!("Installed #{} {}: {}", obj_num, obj_type, obj_name);
                         let members = result.get("members");
-                        let asns: Vec<String> = members.clone().into_iter().filter(|i| Self::_is_asn(i)).map(|s| s.to_uppercase().to_string()).collect();
-                        let assets: Vec<String> = members.clone().into_iter().filter(|i| Self::_is_as_set(i)).map(|s| s.to_uppercase().to_string()).collect();
-                        self.as_sets.insert((data_source.clone(), obj_name), AsSet { asns: asns, as_sets: assets });
+                        let asns: Vec<String> = members
+                            .clone()
+                            .into_iter()
+                            .filter(|i| Self::_is_asn(i))
+                            .map(|s| s.to_uppercase().to_string())
+                            .collect();
+                        let assets: Vec<String> = members
+                            .clone()
+                            .into_iter()
+                            .filter(|i| Self::_is_as_set(i))
+                            .map(|s| s.to_uppercase().to_string())
+                            .collect();
+                        self.as_sets.insert(
+                            (data_source.clone(), obj_name),
+                            AsSet {
+                                asns: asns,
+                                as_sets: assets,
+                            },
+                        );
                         // TODO: Normalize AS-Set Data further (casing, IRR:: prefixes, on/two colons, etc.)
                     }
                     "route" | "route6" => {
                         let origins = result.get("origin");
                         for i in origins {
-                            self.as_routes.entry((data_source.clone(), i.to_uppercase().to_string())).and_modify(|asn| asn.prefixes.push(obj_name.to_string())).or_insert(AsRoutes { prefixes: vec![obj_name.to_string()] });
+                            self.as_routes
+                                .entry((data_source.clone(), i.to_uppercase().to_string()))
+                                .and_modify(|asn| asn.prefixes.push(obj_name.to_string()))
+                                .or_insert(AsRoutes {
+                                    prefixes: vec![obj_name.to_string()],
+                                });
                             //println!("Installed #{} {}: {} in {}", obj_num, obj_type, obj_name, i);
                         }
                     }
@@ -170,8 +193,15 @@ impl PoofData {
             }
         }
 
-        println!("Successfully parsed {} lines into {} objects.", line_num, obj_num);
-        println!("Processed {} in {}ms", filename, old_time.elapsed().as_millis());
+        println!(
+            "Successfully parsed {} lines into {} objects.",
+            line_num, obj_num
+        );
+        println!(
+            "Processed {} in {}ms",
+            filename,
+            old_time.elapsed().as_millis()
+        );
         Ok(())
     }
 
@@ -192,7 +222,7 @@ impl PoofData {
         }
         return None;
     }
-    
+
     pub fn query_as_set(&self, data_sources: Vec<String>, as_set: String) -> Option<&AsSet> {
         for data_source in data_sources {
             if let Some(res) = self.as_sets.get(&(data_source, as_set.to_uppercase())) {
@@ -206,7 +236,12 @@ impl PoofData {
         self._query_as_set_recursive(as_set, depth, &mut vec![String::from("AS-LOREMIPSUM")])
     }
 
-    pub fn _query_as_set_recursive(&self, as_set: String, depth: u32, ignore_as_sets: &mut Vec<String>) -> Option<Vec<String>> {
+    pub fn _query_as_set_recursive(
+        &self,
+        as_set: String,
+        depth: u32,
+        ignore_as_sets: &mut Vec<String>,
+    ) -> Option<Vec<String>> {
         if depth == 0 || ignore_as_sets.contains(&as_set) {
             return None;
         }
@@ -218,37 +253,55 @@ impl PoofData {
 
         let res = self.query_as_set(data_sources, as_set).unwrap_or(&dummy);
         let mut as_list = res.asns.clone();
-        
+
         for a in res.as_sets.clone() {
-            as_list.append(&mut self._query_as_set_recursive(a, depth - 1, ignore_as_sets).unwrap_or(vec![]));
+            as_list.append(
+                &mut self
+                    ._query_as_set_recursive(a, depth - 1, ignore_as_sets)
+                    .unwrap_or(vec![]),
+            );
         }
 
         Some(as_list)
     }
 
-    pub fn query_as_set_prefixes_recursive(&self, as_set: String, depth: u32) -> Option<Vec<String>> {
+    pub fn query_as_set_prefixes_recursive(
+        &self,
+        as_set: String,
+        depth: u32,
+    ) -> Option<Vec<String>> {
         let as_list = self.query_as_set_recursive(as_set, depth).unwrap();
         let mut prefixes: Vec<String> = vec![];
         let data_sources = self.getSortedDataSources(vec![]);
 
         for asn in as_list {
             prefixes.append(
-                &mut self.query_asn(data_sources.clone(), asn)
-                .unwrap_or(&AsRoutes { prefixes: vec![] })
-                .prefixes
-                .clone());
+                &mut self
+                    .query_asn(data_sources.clone(), asn)
+                    .unwrap_or(&AsRoutes { prefixes: vec![] })
+                    .prefixes
+                    .clone(),
+            );
         }
 
         Some(prefixes)
     }
-
 }
 
-async fn get_route_from_as_set(name: String, data: PoofData) -> Result<impl warp::Reply, warp::Rejection> {
+async fn get_route_from_as_set(
+    name: String,
+    data: PoofData,
+) -> Result<impl warp::Reply, warp::Rejection> {
     let old_time = Instant::now();
     if let Some(value) = data.query_as_set_prefixes_recursive(name.to_string(), 25) {
         Ok(warp::reply::with_status(
-            format!("# Recursed route resolution for '{}' in {}μs, {} items\n{:#?}", name, old_time.elapsed().as_micros(), value.len(), value),
+            format!(
+                "# Recursed route resolution for '{}' in {}μs, {} items\n{:#?}",
+                name,
+                old_time.elapsed().as_micros(),
+                value.len(),
+                value
+            ),
             StatusCode::OK,
         ))
     } else {
@@ -259,11 +312,20 @@ async fn get_route_from_as_set(name: String, data: PoofData) -> Result<impl warp
     }
 }
 
-async fn get_asn_from_as_set(name: String, data: PoofData) -> Result<impl warp::Reply, warp::Rejection> {
+async fn get_asn_from_as_set(
+    name: String,
+    data: PoofData,
+) -> Result<impl warp::Reply, warp::Rejection> {
     let old_time = Instant::now();
     if let Some(value) = data.query_as_set_recursive(name.to_string(), 25) {
         Ok(warp::reply::with_status(
-            format!("# Recursed AS-Set resolution for '{}' in {}μs, {} items\n{:#?}", name, old_time.elapsed().as_micros(), value.len(), value),
+            format!(
+                "# Recursed AS-Set resolution for '{}' in {}μs, {} items\n{:#?}",
+                name,
+                old_time.elapsed().as_micros(),
+                value.len(),
+                value
+            ),
             StatusCode::OK,
         ))
     } else {
@@ -272,7 +334,6 @@ async fn get_asn_from_as_set(name: String, data: PoofData) -> Result<impl warp::
             StatusCode::NOT_FOUND,
         ))
     }
-
 }
 
 #[tokio::main]
@@ -284,7 +345,7 @@ async fn main() {
 
     let mut data = task::spawn_blocking(move || {
         let mut poof = PoofData::new();
-        for (name,options) in config.dataSources {
+        for (name, options) in config.dataSources {
             poof.newDataSource(name.clone(), options.serial, options.priority);
             for file in options.importSources {
                 if file.clone().starts_with("ftp://") {
@@ -299,7 +360,9 @@ async fn main() {
 
         println!("Ready to serve your requests!");
         poof
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 
     let data_moved = warp::any().map(move || data.clone());
 
@@ -312,10 +375,11 @@ async fn main() {
         .and(data_moved.clone())
         .and_then(get_route_from_as_set);
 
-    let listenAddress: SocketAddr = config.api.listenAddress.parse()
+    let listenAddress: SocketAddr = config
+        .api
+        .listenAddress
+        .parse()
         .expect("Unable to parse socket address");
 
-    warp::serve(routes.or(routes2))
-        .run(listenAddress)
-        .await;
+    warp::serve(routes.or(routes2)).run(listenAddress).await;
 }
