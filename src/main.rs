@@ -1,4 +1,7 @@
 use http::StatusCode;
+use log::{Level, Metadata, Record};
+use log::{LevelFilter, SetLoggerError};
+use log::{error, info, trace, warn};
 use regex::Regex;
 use rpsl::parse_object;
 use serde::Deserialize;
@@ -12,29 +15,51 @@ use std::time::Instant;
 use tokio::task;
 use warp::Filter;
 
+struct SimpleLogger;
+
+impl log::Log for SimpleLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= Level::Info
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            println!("{} - {}", record.level(), record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: SimpleLogger = SimpleLogger;
+
+pub fn init() -> Result<(), SetLoggerError> {
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
+}
+
 #[derive(Deserialize)]
 struct Config {
     api: ConfigAPI,
-    dataSources: HashMap<String, ConfigDataSources>,
+    data_sources: HashMap<String, ConfigDataSources>,
 }
 
 #[derive(Deserialize)]
 struct ConfigAPI {
-    listenAddress: String,
+    listen_address: String,
 }
 
 #[derive(Deserialize)]
 struct ConfigDataSources {
-    importSources: Vec<String>,
-    importSerial: Option<String>,
-    nrtmHost: Option<String>,
+    import_sources: Vec<String>,
+    import_serial: Option<String>,
+    nrtm_host: Option<String>,
     #[serde(default)]
     serial: u64,
     #[serde(default)]
     priority: i64,
 }
 
-fn parseConfig(filename: String) -> Config {
+fn parse_config(filename: String) -> Config {
     let contents = read_to_string(filename).expect("Could not open config file");
     toml::from_str(&contents).expect("Could not parse config file")
 }
@@ -85,7 +110,7 @@ impl PoofData {
         }
     }
 
-    fn newDataSource(&mut self, name: String, serial: u64, priority: i64) {
+    fn new_data_source(&mut self, name: String, serial: u64, priority: i64) {
         self.datasources.insert(
             name,
             DataSource {
@@ -95,7 +120,7 @@ impl PoofData {
         );
     }
 
-    fn getSortedDataSources(&self, exclude: Vec<String>) -> Vec<String> {
+    fn get_sorted_data_sources(&self, exclude: Vec<String>) -> Vec<String> {
         // TODO: Data source sorting
         self.datasources
             .iter()
@@ -117,10 +142,10 @@ impl PoofData {
         for line in reader.lines() {
             if obj_num > 100000 {
                 // DEBUG
-                break;
+                //break;
             }
             let l = line.unwrap_or_else(|err| {
-                //println!("Error encountered in line {}: {}", line_num, err);
+                error!("Error encountered reading line {}: {}", line_num, err);
                 "".to_string()
             });
             line_num = line_num + 1;
@@ -131,7 +156,7 @@ impl PoofData {
             if l.eq("") {
                 let parsed = parse_object(&object_buf);
                 if let Err(err) = parsed {
-                    //println!("Error parsing obj {} in line {}", obj_num, line_num);
+                    warn!("Error parsing obj {} in line {}", obj_num, line_num);
                     object_buf.clear();
                     continue;
                 }
@@ -139,7 +164,10 @@ impl PoofData {
                 let obj_type = result[0].name.to_string();
                 let obj_name_content = result[0].value.with_content();
                 if obj_name_content.len() == 0 {
-                    //println!("Skipped object {} of type {} and no name", obj_num, obj_type);
+                    warn!(
+                        "Skipped object {} of type {} and no name",
+                        obj_num, obj_type
+                    );
                     object_buf.clear();
                     continue;
                 }
@@ -147,7 +175,7 @@ impl PoofData {
 
                 match obj_type.as_str() {
                     "as-set" => {
-                        //println!("Installed #{} {}: {}", obj_num, obj_type, obj_name);
+                        trace!("Installed #{} {}: {}", obj_num, obj_type, obj_name);
                         let members = result.get("members");
                         let asns: Vec<String> = members
                             .clone()
@@ -179,11 +207,14 @@ impl PoofData {
                                 .or_insert(AsRoutes {
                                     prefixes: vec![obj_name.to_string()],
                                 });
-                            //println!("Installed #{} {}: {} in {}", obj_num, obj_type, obj_name, i);
+                            trace!("Installed #{} {}: {} in {}", obj_num, obj_type, obj_name, i);
                         }
                     }
                     _ => {
-                        //println!("Skipped object {} of type {} and name {}", obj_num, obj_type, obj_name);
+                        trace!(
+                            "Skipped object {} of type {} and name {}",
+                            obj_num, obj_type, obj_name
+                        );
                     }
                 }
                 //println!("{:#?}", parsed);
@@ -193,11 +224,11 @@ impl PoofData {
             }
         }
 
-        println!(
+        info!(
             "Successfully parsed {} lines into {} objects.",
             line_num, obj_num
         );
-        println!(
+        info!(
             "Processed {} in {}ms",
             filename,
             old_time.elapsed().as_millis()
@@ -249,7 +280,7 @@ impl PoofData {
 
         // TODO: yeah, uh
         let dummy = AsSet::new();
-        let data_sources = self.getSortedDataSources(vec![]);
+        let data_sources = self.get_sorted_data_sources(vec![]);
 
         let res = self.query_as_set(data_sources, as_set).unwrap_or(&dummy);
         let mut as_list = res.asns.clone();
@@ -272,7 +303,7 @@ impl PoofData {
     ) -> Option<Vec<String>> {
         let as_list = self.query_as_set_recursive(as_set, depth).unwrap();
         let mut prefixes: Vec<String> = vec![];
-        let data_sources = self.getSortedDataSources(vec![]);
+        let data_sources = self.get_sorted_data_sources(vec![]);
 
         for asn in as_list {
             prefixes.append(
@@ -338,27 +369,28 @@ async fn get_asn_from_as_set(
 
 #[tokio::main]
 async fn main() {
-    println!("Hello, poof!");
-    println!("initializing data..");
+    _ = init();
+    info!("Hello, poof!");
+    info!("initializing data..");
 
-    let config = parseConfig(String::from("config.toml"));
+    let config = parse_config(String::from("config.toml"));
 
-    let mut data = task::spawn_blocking(move || {
+    let data = task::spawn_blocking(move || {
         let mut poof = PoofData::new();
-        for (name, options) in config.dataSources {
-            poof.newDataSource(name.clone(), options.serial, options.priority);
-            for file in options.importSources {
+        for (name, options) in config.data_sources {
+            poof.new_data_source(name.clone(), options.serial, options.priority);
+            for file in options.import_sources {
                 if file.clone().starts_with("ftp://") {
-                    println!("FTP data source not implemented yet")
+                    warn!("FTP data source not implemented yet. Skipping")
                 }
                 if file.clone().starts_with("http://") || file.clone().starts_with("https://") {
-                    println!("http(s) data source not implemented yet")
+                    warn!("http(s) data source not implemented yet. Skipping")
                 }
                 let _ = poof.import_from_file(name.clone(), file.clone());
             }
         }
 
-        println!("Ready to serve your requests!");
+        info!("Ready to serve your requests!");
         poof
     })
     .await
@@ -375,11 +407,11 @@ async fn main() {
         .and(data_moved.clone())
         .and_then(get_route_from_as_set);
 
-    let listenAddress: SocketAddr = config
+    let listen_address: SocketAddr = config
         .api
-        .listenAddress
+        .listen_address
         .parse()
         .expect("Unable to parse socket address");
 
-    warp::serve(routes.or(routes2)).run(listenAddress).await;
+    warp::serve(routes.or(routes2)).run(listen_address).await;
 }
