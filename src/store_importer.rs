@@ -24,33 +24,31 @@ impl Iterator for RpslParser {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut object_buf = String::new();
+        let mut object_buf = String::with_capacity(8192);
 
         while let Some(line) = self.reader.next() {
-            if self.obj_num > 1000000 {
-                // DEBUG
-                //break;
-            }
             let l = line.unwrap_or_else(|err| {
                 trace!("Error encountered reading line {}: {}", self.line_num, err);
                 "".to_string()
             });
             self.line_num = self.line_num + 1;
 
-            if l.starts_with("#") || (l.eq("") && object_buf.eq("")) {
+            if l.starts_with("#") {
                 // Ignore comments and empty lines
                 continue;
             }
-            object_buf.push_str(&(l.clone() + "\n"));
+            object_buf.push_str(&l);
+            object_buf.push_str("\n");
 
-            if l.eq("") {
+            if l.eq("") && !object_buf.eq("") {
                 self.obj_num = self.obj_num + 1;
-                return Some(object_buf.clone());
+                return Some(object_buf);
             }
         }
+
         if !object_buf.eq("") {
             // Yield last object
-            return Some(object_buf.clone());
+            return Some(object_buf);
         }
 
         info!(

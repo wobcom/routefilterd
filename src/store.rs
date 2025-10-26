@@ -80,7 +80,7 @@ impl PoofStore {
         let obj_name_content = result[0].value.with_content();
         if obj_name_content.len() == 0 {
             trace!("Skipped object type {} and no name", obj_type);
-            return Err(format!("meow"));
+            return Err("".to_string());
         }
         let obj_name = obj_name_content[0].to_uppercase().to_string();
 
@@ -107,7 +107,11 @@ impl PoofStore {
                         as_sets: assets,
                     },
                 );
-                // TODO: Normalize AS-Set Data further (casing, IRR:: prefixes, on/two colons, etc.)
+                // TODO: Normalize AS-Set Data further
+                // - casing
+                // - IRR:: prefixes
+                // - on/two colons
+                // - comments after entries (see: AS57555:AS-MEMBERS)
             }
             "route" | "route6" => {
                 let origins = result.get("origin");
@@ -158,8 +162,13 @@ impl PoofStore {
         return None;
     }
 
-    pub fn query_as_set_recursive(&self, as_set: String, depth: u32) -> Option<Vec<String>> {
-        self._query_as_set_recursive(as_set, depth, &mut vec![String::from("AS-LOREMIPSUM")])
+    pub fn query_as_set_recursive(
+        &self,
+        as_set: String,
+        depth: u32,
+        ignore_as_sets: Vec<String>,
+    ) -> Option<Vec<String>> {
+        self._query_as_set_recursive(as_set, depth, &mut ignore_as_sets.clone())
     }
 
     pub fn _query_as_set_recursive(
@@ -198,7 +207,8 @@ impl PoofStore {
         as_set: String,
         depth: u32,
     ) -> Option<Vec<String>> {
-        let as_list = self.query_as_set_recursive(as_set, depth).unwrap();
+        // TODO: add ignore_as_sets
+        let as_list = self.query_as_set_recursive(as_set, depth, vec![]).unwrap();
         let mut prefixes: Vec<String> = vec![];
         let data_sources = self.get_sorted_data_sources(vec![]);
 

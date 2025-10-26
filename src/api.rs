@@ -10,23 +10,26 @@ use std::time::Instant;
 struct PoofParameter {
     name: String,
     recursion_depth: Option<u32>,
+    #[serde(default)]
+    ignore_as_sets: String,
 }
 
 async fn get_route_from_as_set(
     State(data): State<Arc<store::PoofStore>>,
     Query(query): Query<PoofParameter>,
 ) -> impl IntoResponse {
+    let old_time = Instant::now();
     let name = query.name.clone();
     let recursion_depth = query.recursion_depth.or(Some(32)).unwrap();
-    let old_time = Instant::now();
     if let Some(value) = data.query_as_set_prefixes_recursive(name.to_string(), recursion_depth) {
-        return format!(
-            "# Recursed route resolution for '{}' in {}μs, {} items\n{:#?}",
+        let mut response = format!(
+            "# Recursed route resolution for '{}' in {}μs, {} items\n",
             name,
             old_time.elapsed().as_micros(),
-            value.len(),
-            value
+            value.len()
         );
+        response.push_str(&serde_json::to_string_pretty(&value).unwrap());
+        return response;
     } else {
         return format!("Value for '{}' not found in cache.", name);
     }
@@ -36,17 +39,26 @@ async fn get_asn_from_as_set(
     State(data): State<Arc<store::PoofStore>>,
     Query(query): Query<PoofParameter>,
 ) -> impl IntoResponse {
+    let old_time = Instant::now();
     let name = query.name.clone();
     let recursion_depth = query.recursion_depth.or(Some(32)).unwrap();
-    let old_time = Instant::now();
-    if let Some(value) = data.query_as_set_recursive(name.to_string(), recursion_depth) {
-        return format!(
-            "# Recursed AS-Set resolution for '{}' in {}μs, {} items\n{:#?}",
+    let ignore_as_sets = query
+        .ignore_as_sets
+        .clone()
+        .split(',')
+        .map(|a| a.to_string())
+        .collect::<Vec<String>>();
+    if let Some(value) =
+        data.query_as_set_recursive(name.to_string(), recursion_depth, ignore_as_sets)
+    {
+        let mut response = format!(
+            "# Recursed AS-Set resolution for '{}' in {}μs, {} items\n",
             name,
             old_time.elapsed().as_micros(),
-            value.len(),
-            value
+            value.len()
         );
+        response.push_str(&serde_json::to_string_pretty(&value).unwrap());
+        return response;
     } else {
         return format!("Value for '{}' not found in cache.", name);
     }

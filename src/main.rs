@@ -38,17 +38,24 @@ struct Config {
 #[derive(Deserialize)]
 struct ConfigAPI {
     listen_address: String,
+    #[serde(default)]
+    default_recursion_depth: u32,
+    // TODO: Implement default recursion depth
 }
 
 #[derive(Deserialize)]
 struct ConfigDataSources {
     import_sources: Vec<String>,
+    // TODO: Implement downloads
     import_serial: Option<String>,
     nrtm_host: Option<String>,
+    // TODO: Implement NRTM
     #[serde(default)]
     serial: u64,
+    // TODO: Implement Serial
     #[serde(default)]
     priority: i64,
+    // TODO: Finish implementing priorities
 }
 
 fn parse_config(filename: String) -> Config {
@@ -56,10 +63,10 @@ fn parse_config(filename: String) -> Config {
     toml::from_str(&contents).expect("Could not parse config file")
 }
 
-#[tokio::main(worker_threads = 4)]
+#[tokio::main(worker_threads = 8)]
 async fn main() {
     info!("Hello, poof!");
-    info!("initializing data..");
+    info!("Preparing data..");
 
     let config = parse_config(String::from("config.toml"));
 
