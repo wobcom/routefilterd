@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+axum = { version = "0.8", default-features = false, features = ["query", "http1", "tokio"] }
 http = "1.3.1"
 log = "0.4.28"
 regex = "1.11.2"
@@ -11,4 +12,3 @@ rpsl-rs = "2.0.1"
 serde = { version = "1.0.226", features = ["derive"] }
 tokio = { version = "1.47.1", features = ["full"] }
 toml = "0.9.8"
-warp = { version = "0.4", features = ["server"] }

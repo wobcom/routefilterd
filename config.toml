@@ -12,3 +12,16 @@ priority = 500
 [data_sources.ARIN]
 import_sources = ["data/arin.db"]
 priority = 400
+
+[data_sources.RADB]
+import_sources = ["data/radb.db"]
+priority = 200
+
+[data_sources.IDNIC]
+import_sources = ["data/idnic.db"]
+priority = 150
+
+[data_sources.LACNIC]
+import_sources = ["data/lacnic.db"]
+priority = 150
+

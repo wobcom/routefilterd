@@ -1,13 +1,14 @@
+use crate::api;
 use log::LevelFilter;
 use log::{Level, Metadata, Record};
 use log::{info, warn};
 use poof::*;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fs::File;
 use std::fs::read_to_string;
-use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::task;
-use warp::Filter;
 
 struct SimpleLogger;
 
@@ -55,7 +56,7 @@ fn parse_config(filename: String) -> Config {
     toml::from_str(&contents).expect("Could not parse config file")
 }
 
-#[tokio::main]
+#[tokio::main(worker_threads = 4)]
 async fn main() {
     info!("Hello, poof!");
     info!("initializing data..");
@@ -72,10 +73,12 @@ async fn main() {
         })
     });
 
-    let data = task::spawn_blocking(move || {
-        let mut poof = store::PoofData::new();
-        for (name, options) in config.data_sources {
-            poof.new_data_source(name.clone(), options.serial, options.priority);
+    let store = Arc::new(store::PoofStore::new());
+
+    for (name, options) in config.data_sources {
+        let store_cloned = store.clone();
+        task::spawn(async move {
+            let _ = store_cloned.new_data_source(name.clone(), options.serial, options.priority);
             for file in options.import_sources {
                 if file.clone().starts_with("ftp://") {
                     warn!("FTP data source not implemented yet. Skipping")
@@ -83,32 +86,15 @@ async fn main() {
                 if file.clone().starts_with("http://") || file.clone().starts_with("https://") {
                     warn!("http(s) data source not implemented yet. Skipping")
                 }
-                let _ = poof.import_from_file(name.clone(), file.clone());
+                info!("Importing {}", file.clone());
+                let socket = File::open(file.clone()).expect("Couldn't open file");
+                let _ = store_cloned.import_objects(&name, store_importer::RpslParser::new(socket));
+                info!("Done importing {}", file.clone());
             }
-        }
+        });
+    }
 
-        info!("Ready to serve your requests!");
-        poof
-    })
-    .await
-    .unwrap();
+    info!("Ready to serve your requests!");
 
-    let data_moved = warp::any().map(move || data.clone());
-
-    let routes = warp::get()
-        .and(warp::path!("api" / "v1" / "asnsFromAsSet" / String))
-        .and(data_moved.clone())
-        .and_then(api::get_asn_from_as_set);
-    let routes2 = warp::get()
-        .and(warp::path!("api" / "v1" / "routesFromAsSet" / String))
-        .and(data_moved.clone())
-        .and_then(api::get_route_from_as_set);
-
-    let listen_address: SocketAddr = config
-        .api
-        .listen_address
-        .parse()
-        .expect("Unable to parse socket address");
-
-    warp::serve(routes.or(routes2)).run(listen_address).await;
+    let _ = task::spawn(api::listen(config.api.listen_address, store.clone())).await;
 }
