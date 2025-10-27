@@ -1,12 +1,12 @@
 use crate::api;
 use log::LevelFilter;
-use log::{Level, Metadata, Record};
 use log::{info, warn};
-use poof::*;
+use log::{Level, Metadata, Record};
+use routefilterd::*;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fs::File;
 use std::fs::read_to_string;
+use std::fs::File;
 use std::sync::Arc;
 use tokio::task;
 
@@ -65,7 +65,7 @@ fn parse_config(filename: String) -> Config {
 
 #[tokio::main(worker_threads = 8)]
 async fn main() {
-    info!("Hello, poof!");
+    info!("Starting routefilterd");
     info!("Preparing data..");
 
     let config = parse_config(String::from("config.toml"));
@@ -80,7 +80,7 @@ async fn main() {
         })
     });
 
-    let store = Arc::new(store::PoofStore::new());
+    let store = Arc::new(store::DataStore::new());
 
     for (name, options) in config.data_sources {
         let store_cloned = store.clone();

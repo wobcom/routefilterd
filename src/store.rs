@@ -6,12 +6,11 @@ use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 use tokio::task;
 
-
 static ASN_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^AS[0-9]+$").unwrap());
 static ASSET_REGEX: LazyLock<Regex> =
-LazyLock::new(|| Regex::new(r"^([A-Z]+::)?(AS[0-9]+[:]+)?AS-[A-Z0-9-]+$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([A-Z]+::)?(AS[0-9]+[:]+)?AS-[A-Z0-9-]+$").unwrap());
 
-pub struct PoofStore {
+pub struct DataStore {
     datasources: std::sync::Mutex<HashMap<String, DataSource>>,
     as_sets: std::sync::Mutex<HashMap<(String, String), AsSet>>,
     as_routes: std::sync::Mutex<HashMap<(String, String), AsRoutes>>,
@@ -43,7 +42,7 @@ pub struct AsRoutes {
     prefixes: Vec<String>,
 }
 
-impl PoofStore {
+impl DataStore {
     pub fn new() -> Self {
         Self {
             datasources: Mutex::new(HashMap::new()),
@@ -73,7 +72,6 @@ impl PoofStore {
             .collect()
     }
 
-
     pub fn import_objects<T: Iterator<Item = String>>(
         self: &Arc<Self>,
         data_source: &String,
@@ -88,7 +86,6 @@ impl PoofStore {
         }
         return Ok(());
     }
-
 
     fn clean_string(text: &str) -> String {
         let mut cleaned_text = text;
@@ -116,7 +113,8 @@ impl PoofStore {
         for m in members {
             if m.contains(",") {
                 // Comma separated values
-                let (collected_asns, collected_assets) = Self::parse_members(m.split(",").collect());
+                let (collected_asns, collected_assets) =
+                    Self::parse_members(m.split(",").collect());
                 asns.extend(collected_asns);
                 assets.extend(collected_assets);
                 continue;
@@ -168,7 +166,6 @@ impl PoofStore {
                         as_sets: assets,
                     },
                 );
-
             }
             "route" | "route6" => {
                 let origins = result.get("origin");

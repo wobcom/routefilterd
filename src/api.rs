@@ -1,13 +1,13 @@
 use crate::store;
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
-use axum::{Router, routing::get};
+use axum::{routing::get, Router};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Deserialize)]
-struct PoofParameter {
+struct QueryParameter {
     name: String,
     recursion_depth: Option<u32>,
     #[serde(default)]
@@ -15,13 +15,14 @@ struct PoofParameter {
 }
 
 async fn get_route_from_as_set(
-    State(data): State<Arc<store::PoofStore>>,
-    Query(query): Query<PoofParameter>,
+    State(data): State<Arc<store::DataStore>>,
+    Query(query): Query<QueryParameter>,
 ) -> impl IntoResponse {
     let old_time = Instant::now();
     let name = query.name.clone();
     let recursion_depth = query.recursion_depth.or(Some(32)).unwrap();
-    if let Some(mut value) = data.query_as_set_prefixes_recursive(name.to_string(), recursion_depth) {
+    if let Some(mut value) = data.query_as_set_prefixes_recursive(name.to_string(), recursion_depth)
+    {
         value.sort(); // TODO: Use human friendly sorting
         value.dedup();
         let mut response = format!(
@@ -38,8 +39,8 @@ async fn get_route_from_as_set(
 }
 
 async fn get_asn_from_as_set(
-    State(data): State<Arc<store::PoofStore>>,
-    Query(query): Query<PoofParameter>,
+    State(data): State<Arc<store::DataStore>>,
+    Query(query): Query<QueryParameter>,
 ) -> impl IntoResponse {
     let old_time = Instant::now();
     let name = query.name.clone();
@@ -68,36 +69,33 @@ async fn get_asn_from_as_set(
     }
 }
 
-
 async fn get_as_set(
-    State(data): State<Arc<store::PoofStore>>,
-                             Query(query): Query<PoofParameter>,
+    State(data): State<Arc<store::DataStore>>,
+    Query(query): Query<QueryParameter>,
 ) -> impl IntoResponse {
     let old_time = Instant::now();
     let name = query.name.clone();
 
-    if let Some(mut value) =
-        data.query_as_set(vec!["RIPE".to_string()], name.to_string())
-        {
-            let mut result = Vec::new();
-            result.append(&mut value.as_sets);
-            result.append(&mut value.asns);
-            //value.sort(); // TODO: Use human friendly sorting
-            //value.dedup();
-            let mut response = format!(
-                "# Requested AS-Set for '{}' in {}μs, {} items\n",
-                name,
-                old_time.elapsed().as_micros(),
-                                       result.len()
-            );
-            response.push_str(&serde_json::to_string_pretty(&result).unwrap());
-            return response;
-        } else {
-            return format!("Value for '{}' not found in cache.", name);
-        }
+    if let Some(mut value) = data.query_as_set(vec!["RIPE".to_string()], name.to_string()) {
+        let mut result = Vec::new();
+        result.append(&mut value.as_sets);
+        result.append(&mut value.asns);
+        //value.sort(); // TODO: Use human friendly sorting
+        //value.dedup();
+        let mut response = format!(
+            "# Requested AS-Set for '{}' in {}μs, {} items\n",
+            name,
+            old_time.elapsed().as_micros(),
+            result.len()
+        );
+        response.push_str(&serde_json::to_string_pretty(&result).unwrap());
+        return response;
+    } else {
+        return format!("Value for '{}' not found in cache.", name);
+    }
 }
 
-pub async fn listen(listen_address: String, store: Arc<store::PoofStore>) {
+pub async fn listen(listen_address: String, store: Arc<store::DataStore>) {
     let routermake = Router::new()
         .route("/asSet", get(get_as_set))
         .route("/asnsFromAsSet", get(get_asn_from_as_set))
