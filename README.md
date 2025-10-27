@@ -22,3 +22,22 @@ The tool is written in Rust and performance optimized. There is no database - al
 - [ ] NRTM ingest
 - [ ] Tests
 - [ ] Document and compare AS-Set Resolution to other tools
+
+
+### Example config
+config.toml
+```toml
+log_level = "info"
+
+[api]
+listen_address = "[::]:1337"
+default_recursion_depth = 30
+
+[data_sources.RIPE]
+import_sources = ["data/ripe.db"]
+priority = 500
+
+[data_sources.ARIN]
+import_sources = ["data/arin.db"]
+priority = 400
+```
