@@ -21,7 +21,9 @@ async fn get_route_from_as_set(
     let old_time = Instant::now();
     let name = query.name.clone();
     let recursion_depth = query.recursion_depth.or(Some(32)).unwrap();
-    if let Some(value) = data.query_as_set_prefixes_recursive(name.to_string(), recursion_depth) {
+    if let Some(mut value) = data.query_as_set_prefixes_recursive(name.to_string(), recursion_depth) {
+        value.sort(); // TODO: Use human friendly sorting
+        value.dedup();
         let mut response = format!(
             "# Recursed route resolution for '{}' in {}μs, {} items\n",
             name,
@@ -48,9 +50,11 @@ async fn get_asn_from_as_set(
         .split(',')
         .map(|a| a.to_string())
         .collect::<Vec<String>>();
-    if let Some(value) =
+    if let Some(mut value) =
         data.query_as_set_recursive(name.to_string(), recursion_depth, ignore_as_sets)
     {
+        value.sort(); // TODO: Use human friendly sorting
+        value.dedup();
         let mut response = format!(
             "# Recursed AS-Set resolution for '{}' in {}μs, {} items\n",
             name,
@@ -64,8 +68,38 @@ async fn get_asn_from_as_set(
     }
 }
 
+
+async fn get_as_set(
+    State(data): State<Arc<store::PoofStore>>,
+                             Query(query): Query<PoofParameter>,
+) -> impl IntoResponse {
+    let old_time = Instant::now();
+    let name = query.name.clone();
+
+    if let Some(mut value) =
+        data.query_as_set(vec!["RIPE".to_string()], name.to_string())
+        {
+            let mut result = Vec::new();
+            result.append(&mut value.as_sets);
+            result.append(&mut value.asns);
+            //value.sort(); // TODO: Use human friendly sorting
+            //value.dedup();
+            let mut response = format!(
+                "# Requested AS-Set for '{}' in {}μs, {} items\n",
+                name,
+                old_time.elapsed().as_micros(),
+                                       result.len()
+            );
+            response.push_str(&serde_json::to_string_pretty(&result).unwrap());
+            return response;
+        } else {
+            return format!("Value for '{}' not found in cache.", name);
+        }
+}
+
 pub async fn listen(listen_address: String, store: Arc<store::PoofStore>) {
     let routermake = Router::new()
+        .route("/asSet", get(get_as_set))
         .route("/asnsFromAsSet", get(get_asn_from_as_set))
         .route("/routesFromAsSet", get(get_route_from_as_set))
         .with_state(store.clone());

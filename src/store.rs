@@ -6,14 +6,41 @@ use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 use tokio::task;
 
+
 static ASN_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^AS[0-9]+$").unwrap());
 static ASSET_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(.*[:]+)?AS-|as-[a-zA-Z][^ ]*$").unwrap());
+LazyLock::new(|| Regex::new(r"^([A-Z]+::)?(AS[0-9]+[:]+)?AS-[A-Z0-9-]+$").unwrap());
 
 pub struct PoofStore {
     datasources: std::sync::Mutex<HashMap<String, DataSource>>,
     as_sets: std::sync::Mutex<HashMap<(String, String), AsSet>>,
     as_routes: std::sync::Mutex<HashMap<(String, String), AsRoutes>>,
+}
+
+#[derive(Clone)]
+pub struct DataSource {
+    serial: u64,
+    priority: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct AsSet {
+    pub asns: Vec<String>,
+    pub as_sets: Vec<String>,
+}
+
+impl AsSet {
+    fn new() -> Self {
+        Self {
+            asns: Vec::new(),
+            as_sets: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AsRoutes {
+    prefixes: Vec<String>,
 }
 
 impl PoofStore {
@@ -46,14 +73,6 @@ impl PoofStore {
             .collect()
     }
 
-    pub fn _is_asn(v: &str) -> bool {
-        ASN_REGEX.is_match(v)
-    }
-
-    pub fn _is_as_set(v: &str) -> bool {
-        // TODO: Compile regex once
-        ASSET_REGEX.is_match(v)
-    }
 
     pub fn import_objects<T: Iterator<Item = String>>(
         self: &Arc<Self>,
@@ -70,6 +89,60 @@ impl PoofStore {
         return Ok(());
     }
 
+
+    fn clean_string(text: &str) -> String {
+        let mut cleaned_text = text;
+
+        // remove everything after #
+        if cleaned_text.contains("#") {
+            (cleaned_text, _) = cleaned_text.split_once("#").unwrap();
+        }
+
+        // Remove whitespace on both ends and uppercase
+        return cleaned_text.trim().to_uppercase();
+    }
+
+    fn parse_members(members: Vec<&str>) -> (Vec<String>, Vec<String>) {
+        // TODO: Normalize AS-Set Data
+        // - casing (Done)
+        // - IRR:: prefixes
+        // - on/two colons
+        // - comma separated values (Done)
+        // - comments after entries (see: AS57555:AS-MEMBERS) (Done)
+
+        let mut asns = Vec::new();
+        let mut assets = Vec::new();
+
+        for m in members {
+            if m.contains(",") {
+                // Comma separated values
+                let (collected_asns, collected_assets) = Self::parse_members(m.split(",").collect());
+                asns.extend(collected_asns);
+                assets.extend(collected_assets);
+                continue;
+            }
+
+            let clean_string = Self::clean_string(m);
+
+            if ASN_REGEX.is_match(&clean_string) {
+                // Regular ASN
+                asns.push(clean_string);
+                continue;
+            }
+            if ASSET_REGEX.is_match(&clean_string) {
+                // Regular AS-Sets
+                assets.push(clean_string);
+                continue;
+            }
+        }
+        asns.sort();
+        asns.dedup();
+        assets.sort();
+        assets.dedup();
+
+        return (asns, assets);
+    }
+
     pub fn import_object(&self, data_source: String, object_buf: String) -> Result<(), String> {
         let parsed = parse_object(&object_buf);
         if let Err(_err) = parsed {
@@ -82,24 +155,12 @@ impl PoofStore {
             trace!("Skipped object type {} and no name", obj_type);
             return Err("".to_string());
         }
-        let obj_name = obj_name_content[0].to_uppercase().to_string();
+        let obj_name = Self::clean_string(obj_name_content[0]);
 
         match obj_type.as_str() {
             "as-set" => {
                 //trace!("Installed #{} {}: {}", obj_num, obj_type, obj_name);
-                let members = result.get("members");
-                let asns: Vec<String> = members
-                    .clone()
-                    .into_iter()
-                    .filter(|i| Self::_is_asn(i))
-                    .map(|s| s.to_uppercase().to_string())
-                    .collect();
-                let assets: Vec<String> = members
-                    .clone()
-                    .into_iter()
-                    .filter(|i| Self::_is_as_set(i))
-                    .map(|s| s.to_uppercase().to_string())
-                    .collect();
+                let (asns, assets) = Self::parse_members(result.get("members"));
                 self.as_sets.lock().unwrap().insert(
                     (data_source.clone(), obj_name),
                     AsSet {
@@ -107,11 +168,7 @@ impl PoofStore {
                         as_sets: assets,
                     },
                 );
-                // TODO: Normalize AS-Set Data further
-                // - casing
-                // - IRR:: prefixes
-                // - on/two colons
-                // - comments after entries (see: AS57555:AS-MEMBERS)
+
             }
             "route" | "route6" => {
                 let origins = result.get("origin");
@@ -224,30 +281,4 @@ impl PoofStore {
 
         Some(prefixes)
     }
-}
-
-#[derive(Clone)]
-pub struct DataSource {
-    serial: u64,
-    priority: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct AsSet {
-    asns: Vec<String>,
-    as_sets: Vec<String>,
-}
-
-impl AsSet {
-    fn new() -> Self {
-        Self {
-            asns: Vec::new(),
-            as_sets: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AsRoutes {
-    prefixes: Vec<String>,
 }

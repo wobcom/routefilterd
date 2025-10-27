@@ -17,6 +17,10 @@ priority = 400
 import_sources = ["data/radb.db"]
 priority = 200
 
+[data_sources.NTTCOM]
+import_sources = ["data/nttcom.db"]
+priority = 250
+
 [data_sources.IDNIC]
 import_sources = ["data/idnic.db"]
 priority = 150
@@ -24,4 +28,36 @@ priority = 150
 [data_sources.LACNIC]
 import_sources = ["data/lacnic.db"]
 priority = 150
+
+[data_sources.APNIC]
+import_sources = [
+  "data/apnic.db.as-set",
+  "data/apnic.db.route",
+  "data/apnic.db.route6",
+]
+priority = 400
+
+[data_sources.TC]
+import_sources = ["data/tc.db"]
+priority = 150
+
+[data_sources.LEVEL3]
+import_sources = ["data/level3.db"]
+priority = 150
+
+[data_sources.JPIRR]
+import_sources = ["data/jpirr.db"]
+priority = 150
+
+[data_sources.BBOI]
+import_sources = ["data/bboi.db"]
+priority = 150
+
+[data_sources.BELL]
+import_sources = ["data/bell.db"]
+priority = 150
+
+[data_sources.AFRINIC]
+import_sources = ["data/afrinic.db"]
+priority = 200
 
