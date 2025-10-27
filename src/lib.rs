@@ -52,7 +52,6 @@ pub struct ConfigDataSources {
     // TODO: Implement Serial
     #[serde(default)]
     pub priority: i64,
-    // TODO: Finish implementing priorities
 }
 
 pub fn parse_config(filename: String) -> Config {

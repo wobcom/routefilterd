@@ -19,7 +19,13 @@ struct QueryParameter {
     recursion_depth: Option<u32>,
     #[serde(default)]
     ignore_as_sets: String,
+    #[serde(default)]
+    datasources: String,
+    #[serde(default)]
+    ignore_datasource: String,
 }
+
+// TODO: Refactor all of these requests
 
 async fn get_route_from_as_set(
     State(state): State<APIState>,
@@ -31,10 +37,26 @@ async fn get_route_from_as_set(
         .recursion_depth
         .or(Some(state.config.default_recursion_depth))
         .unwrap();
-    if let Some(mut value) = state
-        .store
-        .query_as_set_prefixes_recursive(name.to_string(), recursion_depth)
-    {
+    let ignore_as_sets = query
+        .ignore_as_sets
+        .clone()
+        .split(',')
+        .map(|a| a.to_string())
+        .filter(|a| a != "")
+        .collect::<Vec<String>>();
+    let ignore_datasource = query
+        .ignore_datasource
+        .clone()
+        .split(',')
+        .map(|a| a.to_string())
+        .filter(|a| a != "")
+        .collect::<Vec<String>>();
+    if let Some(mut value) = state.store.query_as_set_prefixes_recursive(
+        name.to_string(),
+        recursion_depth,
+        ignore_as_sets,
+        &ignore_datasource,
+    ) {
         value.sort(); // TODO: Use human friendly sorting
         value.dedup();
         let mut response = format!(
@@ -65,12 +87,21 @@ async fn get_asn_from_as_set(
         .clone()
         .split(',')
         .map(|a| a.to_string())
+        .filter(|a| a != "")
         .collect::<Vec<String>>();
-    if let Some(mut value) =
-        state
-            .store
-            .query_as_set_recursive(name.to_string(), recursion_depth, ignore_as_sets)
-    {
+    let ignore_datasource = query
+        .ignore_datasource
+        .clone()
+        .split(',')
+        .map(|a| a.to_string())
+        .filter(|a| a != "")
+        .collect::<Vec<String>>();
+    if let Some(mut value) = state.store.query_as_set_recursive(
+        name.to_string(),
+        recursion_depth,
+        ignore_as_sets,
+        &ignore_datasource,
+    ) {
         value.sort(); // TODO: Use human friendly sorting
         value.dedup();
         let mut response = format!(
@@ -92,16 +123,30 @@ async fn get_as_set(
 ) -> impl IntoResponse {
     let old_time = Instant::now();
     let name = query.name.clone();
-
-    if let Some(mut value) = state
-        .store
-        .query_as_set(vec!["RIPE".to_string()], name.to_string())
+    let ignore_datasource = query
+        .ignore_datasource
+        .clone()
+        .split(',')
+        .map(|a| a.to_string())
+        .filter(|a| a != "")
+        .collect::<Vec<String>>();
+    let datasources = query
+        .datasources
+        .clone()
+        .split(',')
+        .map(|a| a.to_string())
+        .filter(|a| a != "")
+        .collect::<Vec<String>>();
+    if let Some(mut value) =
+        state
+            .store
+            .query_as_set(datasources, name.to_string(), &ignore_datasource)
     {
         let mut result = Vec::new();
         result.append(&mut value.as_sets);
         result.append(&mut value.asns);
-        //value.sort(); // TODO: Use human friendly sorting
-        //value.dedup();
+        result.sort(); // TODO: Use human friendly sorting
+        result.dedup();
         let mut response = format!(
             "# Requested AS-Set for '{}' in {}μs, {} items\n",
             name,
@@ -111,12 +156,12 @@ async fn get_as_set(
         response.push_str(&serde_json::to_string_pretty(&result).unwrap());
         return response;
     } else {
-        return format!("Value for '{}' not found in cache.", name);
+        return format!("AS-SET '{}' not found in cache.", name);
     }
 }
 
 pub async fn listen(config: ConfigAPI, store: Arc<store::DataStore>) {
-    let routermake = Router::new()
+    let router_v1 = Router::new()
         .route("/asSet", get(get_as_set))
         .route("/asnsFromAsSet", get(get_asn_from_as_set))
         .route("/routesFromAsSet", get(get_route_from_as_set))
@@ -127,7 +172,7 @@ pub async fn listen(config: ConfigAPI, store: Arc<store::DataStore>) {
 
     let mut router = Router::new();
 
-    router = router.nest("/api/v1", routermake);
+    router = router.nest("/api/v1", router_v1);
 
     let make_service = router.into_make_service();
 

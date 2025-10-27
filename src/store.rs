@@ -61,15 +61,18 @@ impl DataStore {
         );
     }
 
-    fn get_sorted_data_sources(&self, exclude: Vec<String>) -> Vec<String> {
+    fn get_sorted_data_sources(&self, exclude: &Vec<String>) -> Vec<String> {
         // TODO: Data source sorting
-        self.datasources
+        let mut d = self
+            .datasources
             .lock()
             .unwrap()
-            .iter()
-            .filter(|(s, _)| !exclude.contains(s))
-            .map(|(s, _)| s.clone())
-            .collect()
+            .clone()
+            .into_iter()
+            .filter(|(s, _)| !exclude.contains(s)) // drop excluded
+            .collect::<Vec<(String, DataSource)>>();
+        d.sort_by(|a, b| b.1.priority.cmp(&a.1.priority)); // sort by prio
+        return d.into_iter().map(|(s, _)| s).collect(); // return keys
     }
 
     pub fn import_objects<T: Iterator<Item = String>>(
@@ -202,8 +205,22 @@ impl DataStore {
         return None;
     }
 
-    pub fn query_as_set(&self, data_sources: Vec<String>, as_set: String) -> Option<AsSet> {
-        for data_source in data_sources {
+    pub fn query_as_set(
+        &self,
+        data_sources: Vec<String>,
+        as_set: String,
+        ignore_datasource: &Vec<String>,
+    ) -> Option<AsSet> {
+        let datasources: Vec<String>;
+        if data_sources.clone().len() == 0 {
+            datasources = self.get_sorted_data_sources(&ignore_datasource);
+        } else {
+            datasources = data_sources
+                .into_iter()
+                .filter(|s| !&ignore_datasource.contains(s)) // drop excluded
+                .collect();
+        }
+        for data_source in datasources {
             if let Some(res) = self
                 .as_sets
                 .lock()
@@ -221,8 +238,14 @@ impl DataStore {
         as_set: String,
         depth: u32,
         ignore_as_sets: Vec<String>,
+        ignore_datasource: &Vec<String>,
     ) -> Option<Vec<String>> {
-        self._query_as_set_recursive(as_set, depth, &mut ignore_as_sets.clone())
+        self._query_as_set_recursive(
+            as_set,
+            depth,
+            &mut ignore_as_sets.clone(),
+            ignore_datasource,
+        )
     }
 
     pub fn _query_as_set_recursive(
@@ -230,6 +253,7 @@ impl DataStore {
         as_set: String,
         depth: u32,
         ignore_as_sets: &mut Vec<String>,
+        ignore_datasource: &Vec<String>,
     ) -> Option<Vec<String>> {
         if ignore_as_sets.contains(&as_set) {
             return Some(vec![]);
@@ -238,16 +262,23 @@ impl DataStore {
 
         // TODO: yeah, uh
         let dummy = AsSet::new();
-        let data_sources = self.get_sorted_data_sources(vec![]);
+        let data_sources = self.get_sorted_data_sources(&ignore_datasource);
 
-        let res = self.query_as_set(data_sources, as_set).unwrap_or(dummy);
+        let res = self
+            .query_as_set(data_sources, as_set, &Vec::new())
+            .unwrap_or(dummy);
         let mut as_list = res.asns.clone();
 
         if depth > 0 {
             for a in res.as_sets.clone() {
                 as_list.append(
                     &mut self
-                        ._query_as_set_recursive(a, depth - 1, ignore_as_sets)
+                        ._query_as_set_recursive(
+                            a,
+                            depth - 1,
+                            &mut ignore_as_sets.clone(),
+                            ignore_datasource,
+                        )
                         .unwrap_or(vec![]),
                 );
             }
@@ -260,11 +291,15 @@ impl DataStore {
         &self,
         as_set: String,
         depth: u32,
+        ignore_as_sets: Vec<String>,
+        ignore_datasource: &Vec<String>,
     ) -> Option<Vec<String>> {
         // TODO: add ignore_as_sets
-        let as_list = self.query_as_set_recursive(as_set, depth, vec![]).unwrap();
+        let as_list = self
+            .query_as_set_recursive(as_set, depth, ignore_as_sets.clone(), &ignore_datasource)
+            .unwrap();
         let mut prefixes: Vec<String> = vec![];
-        let data_sources = self.get_sorted_data_sources(vec![]);
+        let data_sources = self.get_sorted_data_sources(&ignore_datasource);
 
         for asn in as_list {
             prefixes.append(
