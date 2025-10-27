@@ -1,10 +1,17 @@
 use crate::store;
+use crate::ConfigAPI;
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::{routing::get, Router};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Instant;
+
+#[derive(Clone)]
+struct APIState {
+    config: ConfigAPI,
+    store: Arc<store::DataStore>,
+}
 
 #[derive(Deserialize)]
 struct QueryParameter {
@@ -15,13 +22,18 @@ struct QueryParameter {
 }
 
 async fn get_route_from_as_set(
-    State(data): State<Arc<store::DataStore>>,
+    State(state): State<APIState>,
     Query(query): Query<QueryParameter>,
 ) -> impl IntoResponse {
     let old_time = Instant::now();
     let name = query.name.clone();
-    let recursion_depth = query.recursion_depth.or(Some(32)).unwrap();
-    if let Some(mut value) = data.query_as_set_prefixes_recursive(name.to_string(), recursion_depth)
+    let recursion_depth = query
+        .recursion_depth
+        .or(Some(state.config.default_recursion_depth))
+        .unwrap();
+    if let Some(mut value) = state
+        .store
+        .query_as_set_prefixes_recursive(name.to_string(), recursion_depth)
     {
         value.sort(); // TODO: Use human friendly sorting
         value.dedup();
@@ -39,12 +51,15 @@ async fn get_route_from_as_set(
 }
 
 async fn get_asn_from_as_set(
-    State(data): State<Arc<store::DataStore>>,
+    State(state): State<APIState>,
     Query(query): Query<QueryParameter>,
 ) -> impl IntoResponse {
     let old_time = Instant::now();
     let name = query.name.clone();
-    let recursion_depth = query.recursion_depth.or(Some(32)).unwrap();
+    let recursion_depth = query
+        .recursion_depth
+        .or(Some(state.config.default_recursion_depth))
+        .unwrap();
     let ignore_as_sets = query
         .ignore_as_sets
         .clone()
@@ -52,7 +67,9 @@ async fn get_asn_from_as_set(
         .map(|a| a.to_string())
         .collect::<Vec<String>>();
     if let Some(mut value) =
-        data.query_as_set_recursive(name.to_string(), recursion_depth, ignore_as_sets)
+        state
+            .store
+            .query_as_set_recursive(name.to_string(), recursion_depth, ignore_as_sets)
     {
         value.sort(); // TODO: Use human friendly sorting
         value.dedup();
@@ -70,13 +87,16 @@ async fn get_asn_from_as_set(
 }
 
 async fn get_as_set(
-    State(data): State<Arc<store::DataStore>>,
+    State(state): State<APIState>,
     Query(query): Query<QueryParameter>,
 ) -> impl IntoResponse {
     let old_time = Instant::now();
     let name = query.name.clone();
 
-    if let Some(mut value) = data.query_as_set(vec!["RIPE".to_string()], name.to_string()) {
+    if let Some(mut value) = state
+        .store
+        .query_as_set(vec!["RIPE".to_string()], name.to_string())
+    {
         let mut result = Vec::new();
         result.append(&mut value.as_sets);
         result.append(&mut value.asns);
@@ -95,12 +115,15 @@ async fn get_as_set(
     }
 }
 
-pub async fn listen(listen_address: String, store: Arc<store::DataStore>) {
+pub async fn listen(config: ConfigAPI, store: Arc<store::DataStore>) {
     let routermake = Router::new()
         .route("/asSet", get(get_as_set))
         .route("/asnsFromAsSet", get(get_asn_from_as_set))
         .route("/routesFromAsSet", get(get_route_from_as_set))
-        .with_state(store.clone());
+        .with_state(APIState {
+            config: config.clone(),
+            store: store.clone(),
+        });
 
     let mut router = Router::new();
 
@@ -109,6 +132,8 @@ pub async fn listen(listen_address: String, store: Arc<store::DataStore>) {
     let make_service = router.into_make_service();
 
     // run our app with hyper, listening globally on port 3000
-    let listener = tokio::net::TcpListener::bind(listen_address).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(config.listen_address)
+        .await
+        .unwrap();
     axum::serve(listener, make_service).await.unwrap();
 }
