@@ -1,10 +1,11 @@
 {
-  pkgs ? import <nixpkgs> {}
+  buildRustPackage,
+  routefilterd-version,
 }:
 
-pkgs.rustPlatform.buildRustPackage rec {
+buildRustPackage rec {
   pname = "routefilterd";
-  version = "0.1.0";
+  version = routefilterd-version;
   
   cargoLock.lockFile = ./Cargo.lock;
   src = ./.;
