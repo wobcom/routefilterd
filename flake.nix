@@ -32,6 +32,7 @@
           nativeBuildInputs = with pkgs; [
             cargo
             rustc
+            rustfmt
           ];
         };
       }
