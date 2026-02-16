@@ -13,28 +13,18 @@ The tool is written in Rust and performance optimized. There is no database - al
 - Low system requirements
 - No persistent state
 
-### To do
-- [x] Import RPSL dumps
-- [x] HTTP API
-- [x] Recursive AS-Set resolution
-- [x] Recursive Route resolution
-- [ ] Download RPSL Dumps
-- [ ] NRTM ingest
-- [ ] Tests
-- [ ] Document and compare AS-Set Resolution to other tools
-
-
 ### Example config
 config.toml
 ```toml
 log_level = "info"
+cache_dir = "cache"
 
 [api]
 listen_address = "[::]:1337"
 default_recursion_depth = 30
 
 [data_sources.RIPE]
-import_sources = ["data/ripe.db"]
+import_sources = ["https://ftp.ripe.net/ripe/dbase/ripe.db.gz"]]
 priority = 500
 
 [data_sources.ARIN]
