@@ -27,6 +27,7 @@ pub struct Config {
     pub api: ConfigAPI,
     pub data_sources: HashMap<String, ConfigDataSources>,
     pub log_level: String,
+    pub cache_dir: String,
 }
 
 #[derive(Deserialize, Clone)]
