@@ -11,16 +11,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - uses: actions/checkout@v4
     - uses: actions/cache@v5
       with:
-        key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         path: |
           ~/.cargo/bin/
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-    - uses: actions/checkout@v4
     - name: check formatting
       run: cargo fmt -v --check
     - name: run tests
