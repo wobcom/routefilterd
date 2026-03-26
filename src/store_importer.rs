@@ -135,10 +135,14 @@ pub async fn import_source(store: &Arc<DataStore>, name: &String, file: String, 
             let _ = store.import_objects(&name, RpslParser::new_from_file(path.clone()));
             info!("Done importing {} from {}", file.clone(), &path);
         }
-        _ => {
-            info!("Importing local file {}", &file);
-            let _ = store.import_objects(&name, RpslParser::new_from_file(file.clone()));
-            info!("Done importing {}", file.clone());
+        "file" => {
+            let filename = &file["file://".len()..];
+            info!("Importing local file {}", filename);
+            let _ = store.import_objects(&name, RpslParser::new_from_file(String::from(filename)));
+            info!("Done importing {}", filename);
+        }
+        schema @ _ => {
+            warn!("Unknown URL schema {}", schema);
         }
     }
 }
