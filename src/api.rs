@@ -1,8 +1,8 @@
-use crate::store;
 use crate::ConfigAPI;
+use crate::store;
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
-use axum::{routing::get, Router};
+use axum::{Router, routing::get};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Instant;

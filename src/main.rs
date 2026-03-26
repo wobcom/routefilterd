@@ -1,11 +1,7 @@
 use crate::api;
 use log::LevelFilter;
-use log::{info, warn};
-use reqwest::Client;
-use reqwest::Url;
+use log::info;
 use routefilterd::*;
-use std::fs::File;
-use std::io::Write;
 use std::sync::Arc;
 use tokio::task;
 
