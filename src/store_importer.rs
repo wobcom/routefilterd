@@ -9,6 +9,7 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Lines;
 use std::io::Write;
+use std::path::Path;
 use std::sync::Arc;
 
 pub struct RpslParser {
@@ -17,21 +18,44 @@ pub struct RpslParser {
     obj_num: u64,
 }
 
+#[derive(Debug)]
+enum LoadFromFileError {
+    OpenError(std::io::Error),
+    UnsupportedExtensionError,
+    NonUtf8ExtensionError,
+}
+trait LoadFromFile<T> {
+    fn load(path: impl AsRef<Path>) -> Result<T, LoadFromFileError>;
+}
+
 impl RpslParser {
-    pub fn new_from_file(path: String) -> Self {
-        let socket = BufReader::new(File::open(&path).expect("Couldn't open file"));
-        if path.ends_with(".gz") {
-            return Self::new(Box::new(BufReader::new(GzDecoder::new(socket))));
-        }
-
-        return Self::new(Box::new(socket));
-    }
-
     pub fn new(buf: Box<dyn BufRead>) -> Self {
         Self {
             reader: buf.lines(),
             line_num: 0,
             obj_num: 0,
+        }
+    }
+}
+
+impl LoadFromFile<RpslParser> for RpslParser {
+    fn load(path: impl AsRef<Path>) -> Result<RpslParser, LoadFromFileError> {
+        fn bufrd_fromraw(fd: File) -> Box<dyn BufRead> {
+            Box::new(BufReader::new(fd))
+        }
+        fn bufrd_fromgz(fd: File) -> Box<dyn BufRead> {
+            Box::new(BufReader::new(GzDecoder::new(BufReader::new(fd))))
+        }
+
+        let fd = File::open(&path).map_err(LoadFromFileError::OpenError)?;
+
+        match path.as_ref().extension() {
+            None => Ok(Self::new(bufrd_fromraw(fd))), // no ext file, attempt direct read
+            Some(ext) => match ext.to_str() {
+                Some("gz") => Ok(Self::new(bufrd_fromgz(fd))),
+                Some(_) => Err(LoadFromFileError::UnsupportedExtensionError),
+                None => Err(LoadFromFileError::NonUtf8ExtensionError),
+            },
         }
     }
 }
@@ -132,13 +156,14 @@ pub async fn import_source(store: &Arc<DataStore>, name: &String, file: String, 
             info!("Downloading {} to cache: {}", &file, &path);
             let path = cache_http(file.clone(), path.clone()).await;
             info!("Importing downloaded file {} from {}", &file, &path);
-            let _ = store.import_objects(&name, RpslParser::new_from_file(path.clone()));
+            let _ =
+                store.import_objects(&name, RpslParser::load(Path::new(path.as_str())).unwrap());
             info!("Done importing {} from {}", file.clone(), &path);
         }
         "file" => {
             let filename = &file["file://".len()..];
             info!("Importing local file {}", filename);
-            let _ = store.import_objects(&name, RpslParser::new_from_file(String::from(filename)));
+            let _ = store.import_objects(&name, RpslParser::load(Path::new(filename)).unwrap());
             info!("Done importing {}", filename);
         }
         schema @ _ => {
