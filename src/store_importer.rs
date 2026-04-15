@@ -184,29 +184,15 @@ fn hash_filename(path: &str, name: &str, serial: u64) -> String {
     format!("{:X}.{}", h.finish(), extension)
 }
 
-pub async fn import_source(store: &Arc<DataStore>, name: &String, file: String, cache_dir: String) {
-    match Url::parse(&file).unwrap().scheme() {
-        "ftp" => warn!("FTP data source not implemented yet. Skipping"),
-        "http" | "https" => {
-            // TODO: Implement stream-parsing without cache
-            let filename = hash_filename(&file, &name, 1234);
-            println!("{}", filename.clone());
-            let path = cache_dir + "/" + &filename;
-            info!("Downloading {} to cache: {}", &file, &path);
-            let path = cache_http(file.clone(), path.clone()).await;
-            info!("Importing downloaded file {} from {}", &file, &path);
-            let _ =
-                store.import_objects(&name, RpslParser::load(Path::new(path.as_str())).unwrap());
-            info!("Done importing {} from {}", file.clone(), &path);
-        }
-        "file" => {
-            let filename = &file["file://".len()..];
-            info!("Importing local file {}", filename);
-            let _ = store.import_objects(&name, RpslParser::load(Path::new(filename)).unwrap());
-            info!("Done importing {}", filename);
-        }
-        schema @ _ => {
-            warn!("Unknown URL schema {}", schema);
-        }
-    }
+pub fn import_source(store: &Arc<DataStore>, name: &String, file: String, cache_dir: String) {
+    info!("Importing {}", &file);
+    let _ = store.import_objects(
+        &name,
+        RpslParser::load_from_url(
+            &reqwest::blocking::Client::new(),
+            &Url::parse(&file).unwrap(),
+        )
+        .unwrap(),
+    );
+    info!("Done importing {}", &file);
 }
