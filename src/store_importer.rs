@@ -3,13 +3,10 @@ use crate::store_importer::LoadFromURLError::{
     FileError, HTTPError, RequestError, UnsupportedSchemaError,
 };
 use flate2::bufread::GzDecoder;
-use futures_util::stream::StreamExt;
-use log::{info, trace, warn};
+use log::{info, trace};
 use reqwest::{Error, StatusCode, Url};
 use std::fs::File;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Lines;
-use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::Arc;
@@ -138,53 +135,7 @@ impl Iterator for RpslParser {
     }
 }
 
-async fn cache_http(url: String, path: String) -> String {
-    let client = reqwest::Client::new();
-
-    let res = client
-        .get(&url)
-        .send()
-        .await
-        .or(Err(format!("Failed to GET from '{}'", &url)))
-        .unwrap();
-
-    let total_size = res
-        .content_length()
-        .ok_or(format!("Failed to get content length from '{}'", &url))
-        .unwrap();
-
-    println!("downloading file of {} bytes", total_size);
-
-    let mut file = File::create(&path)
-        .or(Err(format!("Failed to create file '{}'", &path)))
-        .unwrap();
-    let mut stream = res.bytes_stream();
-
-    while let Some(item) = stream.next().await {
-        let chunk = item
-            .or(Err(format!("Error while downloading file")))
-            .unwrap();
-        file.write_all(&chunk)
-            .or(Err(format!("Error while writing to file")))
-            .unwrap();
-    }
-
-    println!("success");
-    return path;
-}
-
-fn hash_filename(path: &str, name: &str, serial: u64) -> String {
-    let extension = &path.split(".").last().unwrap();
-
-    let mut h = DefaultHasher::new();
-    path.hash(&mut h);
-    name.hash(&mut h);
-    serial.hash(&mut h);
-
-    format!("{:X}.{}", h.finish(), extension)
-}
-
-pub fn import_source(store: &Arc<DataStore>, name: &String, file: String, cache_dir: String) {
+pub fn import_source(store: &Arc<DataStore>, name: &String, file: String, _cache_dir: String) {
     info!("Importing {}", &file);
     let _ = store.import_objects(
         &name,
