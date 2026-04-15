@@ -1,14 +1,16 @@
 use crate::store::DataStore;
+use crate::store_importer::LoadFromURLError::{
+    FileError, HTTPError, RequestError, UnsupportedSchemaError,
+};
 use flate2::bufread::GzDecoder;
-use futures_util::StreamExt;
+use futures_util::stream::StreamExt;
 use log::{info, trace, warn};
-use reqwest::Url;
+use reqwest::{Error, StatusCode, Url};
 use std::fs::File;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::io::BufRead;
-use std::io::BufReader;
 use std::io::Lines;
 use std::io::Write;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -26,6 +28,20 @@ enum LoadFromFileError {
 }
 trait LoadFromFile<T> {
     fn load(path: impl AsRef<Path>) -> Result<T, LoadFromFileError>;
+}
+
+#[derive(Debug)]
+enum LoadFromURLError {
+    UnsupportedSchemaError(String),
+    RequestError(Error),
+    HTTPError(StatusCode),
+    FileError(LoadFromFileError),
+}
+trait LoadFromURL<T> {
+    fn load_from_url(
+        http_client: &reqwest::blocking::Client,
+        url: &Url,
+    ) -> Result<T, LoadFromURLError>;
 }
 
 impl RpslParser {
@@ -56,6 +72,29 @@ impl LoadFromFile<RpslParser> for RpslParser {
                 Some(_) => Err(LoadFromFileError::UnsupportedExtensionError),
                 None => Err(LoadFromFileError::NonUtf8ExtensionError),
             },
+        }
+    }
+}
+
+impl LoadFromURL<RpslParser> for RpslParser {
+    fn load_from_url(
+        http_client: &reqwest::blocking::Client, // dep injection for easy testing
+        url: &Url,
+    ) -> Result<RpslParser, LoadFromURLError> {
+        // for 1st implem just ditch cache, and make request sync.
+        // can be reimplemented better afterwards with http-cache middleware crate
+        match url.scheme() {
+            "http" | "https" => {
+                let response = http_client.get(url.as_str()).send().map_err(RequestError)?;
+                let status = response.status();
+
+                status
+                    .is_success()
+                    .then(move || Self::new(Box::new(BufReader::new(response))))
+                    .ok_or(HTTPError(status))
+            }
+            "file" => Self::load(url.path()).map_err(FileError),
+            scheme @ _ => Err(UnsupportedSchemaError(String::from(scheme))),
         }
     }
 }
