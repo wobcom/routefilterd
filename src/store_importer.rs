@@ -32,7 +32,7 @@ pub enum LoadFromFileError {
     NonUtf8ExtensionError,
 }
 
-trait LoadFromFile<T> {
+pub trait LoadFromFile<T> {
     fn load(path: impl AsRef<Path>) -> Result<T, LoadFromFileError>; // static as it does not need the http client
 }
 
@@ -66,7 +66,7 @@ pub enum LoadFromURLError {
     FileError(LoadFromFileError),
 }
 
-trait LoadFromURL<T> {
+pub trait LoadFromURL<T> {
     fn load_from_url(&self, url: &Url) -> Result<T, LoadFromURLError>; // method as its stateful
 }
 
