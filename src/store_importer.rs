@@ -18,7 +18,7 @@ pub struct RpslParser {
 }
 
 #[derive(Debug)]
-enum LoadFromFileError {
+pub enum LoadFromFileError {
     OpenError(std::io::Error),
     UnsupportedExtensionError,
     NonUtf8ExtensionError,
@@ -28,7 +28,7 @@ trait LoadFromFile<T> {
 }
 
 #[derive(Debug)]
-enum LoadFromURLError {
+pub enum LoadFromURLError {
     UnsupportedSchemaError(String),
     RequestError(Error),
     HTTPError(StatusCode),
@@ -42,17 +42,24 @@ trait LoadFromURL<T> {
 }
 
 impl RpslParser {
-    pub fn new(buf: Box<dyn BufRead>) -> Self {
+    fn new(buf: Box<dyn BufRead>) -> Self {
         Self {
             reader: buf.lines(),
             line_num: 0,
             obj_num: 0,
         }
     }
+    pub fn new_from_url(
+        client: &reqwest::blocking::Client,
+        url: &Url,
+    ) -> Result<Self, LoadFromURLError> {
+        let b = Self::load_from_url(client, url)?;
+        Ok(Self::new(b))
+    }
 }
 
-impl LoadFromFile<RpslParser> for RpslParser {
-    fn load(path: impl AsRef<Path>) -> Result<RpslParser, LoadFromFileError> {
+impl LoadFromFile<Box<dyn BufRead>> for RpslParser {
+    fn load(path: impl AsRef<Path>) -> Result<Box<dyn BufRead>, LoadFromFileError> {
         fn bufrd_fromraw(fd: File) -> Box<dyn BufRead> {
             Box::new(BufReader::new(fd))
         }
@@ -63,9 +70,9 @@ impl LoadFromFile<RpslParser> for RpslParser {
         let fd = File::open(&path).map_err(LoadFromFileError::OpenError)?;
 
         match path.as_ref().extension() {
-            None => Ok(Self::new(bufrd_fromraw(fd))), // no ext file, attempt direct read
+            None => Ok(bufrd_fromraw(fd)), // no ext file, attempt direct read
             Some(ext) => match ext.to_str() {
-                Some("gz") => Ok(Self::new(bufrd_fromgz(fd))),
+                Some("gz") => Ok(bufrd_fromgz(fd)),
                 Some(_) => Err(LoadFromFileError::UnsupportedExtensionError),
                 None => Err(LoadFromFileError::NonUtf8ExtensionError),
             },
@@ -73,11 +80,11 @@ impl LoadFromFile<RpslParser> for RpslParser {
     }
 }
 
-impl LoadFromURL<RpslParser> for RpslParser {
+impl LoadFromURL<Box<dyn BufRead>> for RpslParser {
     fn load_from_url(
         http_client: &reqwest::blocking::Client, // dep injection for easy testing
         url: &Url,
-    ) -> Result<RpslParser, LoadFromURLError> {
+    ) -> Result<Box<dyn BufRead>, LoadFromURLError> {
         // for 1st implem just ditch cache, and make request sync.
         // can be reimplemented better afterwards with http-cache middleware crate
         match url.scheme() {
@@ -85,10 +92,11 @@ impl LoadFromURL<RpslParser> for RpslParser {
                 let response = http_client.get(url.as_str()).send().map_err(RequestError)?;
                 let status = response.status();
 
-                status
-                    .is_success()
-                    .then(move || Self::new(Box::new(BufReader::new(response))))
-                    .ok_or(HTTPError(status))
+                if status.is_success() {
+                    Ok(Box::new(BufReader::new(response)))
+                } else {
+                    Err(HTTPError(status))
+                }
             }
             "file" => Self::load(url.path()).map_err(FileError),
             scheme @ _ => Err(UnsupportedSchemaError(String::from(scheme))),
@@ -139,7 +147,7 @@ pub fn import_source(store: &Arc<DataStore>, name: &String, file: String, _cache
     info!("Importing {}", &file);
     let _ = store.import_objects(
         &name,
-        RpslParser::load_from_url(
+        RpslParser::new_from_url(
             &reqwest::blocking::Client::new(),
             &Url::parse(&file).unwrap(),
         )
