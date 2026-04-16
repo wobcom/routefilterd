@@ -11,54 +11,30 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::Arc;
 
-pub struct RpslParser {
-    reader: Lines<Box<dyn BufRead>>,
-    line_num: u64,
-    obj_num: u64,
+#[cfg(test)]
+use mockall::mock;
+
+struct CommonLoader {
+    http_client: reqwest::blocking::Client,
 }
 
+impl CommonLoader {
+    pub fn new(http_client: reqwest::blocking::Client) -> Self {
+        Self { http_client }
+    }
+}
 #[derive(Debug)]
 pub enum LoadFromFileError {
     OpenError(std::io::Error),
     UnsupportedExtensionError,
     NonUtf8ExtensionError,
 }
+
 trait LoadFromFile<T> {
-    fn load(path: impl AsRef<Path>) -> Result<T, LoadFromFileError>;
+    fn load(path: impl AsRef<Path>) -> Result<T, LoadFromFileError>; // static as it does not need the http client
 }
 
-#[derive(Debug)]
-pub enum LoadFromURLError {
-    UnsupportedSchemaError(String),
-    RequestError(Error),
-    HTTPError(StatusCode),
-    FileError(LoadFromFileError),
-}
-trait LoadFromURL<T> {
-    fn load_from_url(
-        http_client: &reqwest::blocking::Client,
-        url: &Url,
-    ) -> Result<T, LoadFromURLError>;
-}
-
-impl RpslParser {
-    fn new(buf: Box<dyn BufRead>) -> Self {
-        Self {
-            reader: buf.lines(),
-            line_num: 0,
-            obj_num: 0,
-        }
-    }
-    pub fn new_from_url(
-        client: &reqwest::blocking::Client,
-        url: &Url,
-    ) -> Result<Self, LoadFromURLError> {
-        let b = Self::load_from_url(client, url)?;
-        Ok(Self::new(b))
-    }
-}
-
-impl LoadFromFile<Box<dyn BufRead>> for RpslParser {
+impl LoadFromFile<Box<dyn BufRead>> for CommonLoader {
     fn load(path: impl AsRef<Path>) -> Result<Box<dyn BufRead>, LoadFromFileError> {
         fn bufrd_fromraw(fd: File) -> Box<dyn BufRead> {
             Box::new(BufReader::new(fd))
@@ -80,16 +56,29 @@ impl LoadFromFile<Box<dyn BufRead>> for RpslParser {
     }
 }
 
-impl LoadFromURL<Box<dyn BufRead>> for RpslParser {
-    fn load_from_url(
-        http_client: &reqwest::blocking::Client, // dep injection for easy testing
-        url: &Url,
-    ) -> Result<Box<dyn BufRead>, LoadFromURLError> {
+#[derive(Debug)]
+pub enum LoadFromURLError {
+    UnsupportedSchemaError(String),
+    RequestError(Error),
+    HTTPError(StatusCode),
+    FileError(LoadFromFileError),
+}
+
+trait LoadFromURL<T> {
+    fn load_from_url(&self, url: &Url) -> Result<T, LoadFromURLError>; // method as its stateful
+}
+
+impl LoadFromURL<Box<dyn BufRead>> for CommonLoader {
+    fn load_from_url(&self, url: &Url) -> Result<Box<dyn BufRead>, LoadFromURLError> {
         // for 1st implem just ditch cache, and make request sync.
         // can be reimplemented better afterwards with http-cache middleware crate
         match url.scheme() {
             "http" | "https" => {
-                let response = http_client.get(url.as_str()).send().map_err(RequestError)?;
+                let response = self
+                    .http_client
+                    .get(url.as_str())
+                    .send()
+                    .map_err(RequestError)?;
                 let status = response.status();
 
                 if status.is_success() {
@@ -101,6 +90,40 @@ impl LoadFromURL<Box<dyn BufRead>> for RpslParser {
             "file" => Self::load(url.path()).map_err(FileError),
             scheme @ _ => Err(UnsupportedSchemaError(String::from(scheme))),
         }
+    }
+}
+
+#[cfg(test)]
+mock! {
+    pub CommonLoader {
+    }
+
+    impl LoadFromURL<Box<dyn BufRead>> for CommonLoader {
+        fn load_from_url(&self, url: &Url) -> Result<Box<dyn BufRead>, LoadFromURLError> {
+            Ok(Box::new(BufReader::new(String::from("hello"))))
+        }
+    }
+}
+
+pub struct RpslParser {
+    reader: Lines<Box<dyn BufRead>>,
+    line_num: u64,
+    obj_num: u64,
+}
+impl RpslParser {
+    pub fn new(buf: Box<dyn BufRead>) -> Self {
+        Self {
+            reader: buf.lines(),
+            line_num: 0,
+            obj_num: 0,
+        }
+    }
+    pub fn new_from_url(
+        loader: Box<dyn LoadFromURL<Box<dyn BufRead>>>,
+        url: &Url,
+    ) -> Result<Self, LoadFromURLError> {
+        let b = loader.load_from_url(url)?;
+        Ok(Self::new(b))
     }
 }
 
@@ -144,14 +167,31 @@ impl Iterator for RpslParser {
 }
 
 pub fn import_source(store: &Arc<DataStore>, name: &String, file: String, _cache_dir: String) {
+    let loader = CommonLoader::new(reqwest::blocking::Client::new());
+
     info!("Importing {}", &file);
     let _ = store.import_objects(
         &name,
         RpslParser::new_from_url(
-            &reqwest::blocking::Client::new(),
+            Box::new(loader),
             &Url::parse(&file).unwrap(),
         )
         .unwrap(),
     );
     info!("Done importing {}", &file);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mytest() {
+        let mut mockloader = MockCommonLoader::new();
+        let url = Url::parse("http://localhost").unwrap();
+
+        mockloader.expect_load_from_url().once();
+
+        let _parser = RpslParser::new_from_url(Box::new(mockloader), &url);
+    }
 }
