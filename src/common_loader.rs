@@ -90,8 +90,10 @@ impl LoadFromURL<Box<dyn BufRead>> for CommonLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
+    use flate2::Compression;
+    use flate2::bufread::GzEncoder;
+    use std::io::{Read, Write};
+    use tempfile::{Builder, NamedTempFile};
     use tokio::task;
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -108,10 +110,26 @@ mod tests {
     }
 
     #[test]
-    fn test_load_from_file() {
+    fn test_load_from_raw_file() {
         let mut temp = NamedTempFile::new().unwrap();
 
         temp.write_all(TEST_DATA.as_bytes()).unwrap();
+
+        let res = CommonLoader::load(temp.as_ref()).unwrap();
+        assert_lines_eq(res);
+    }
+
+    #[test]
+    fn test_load_from_gz_file() {
+        let mut temp = Builder::new()
+            .suffix(".gz")
+            .tempfile()
+            .expect("cannot create test temporary file");
+        let mut compressed = Vec::new();
+        let mut gz_encoder = GzEncoder::new(TEST_DATA.as_bytes(), Compression::fast());
+
+        gz_encoder.read_to_end(&mut compressed).unwrap();
+        temp.write_all(&compressed[..]).unwrap();
 
         let res = CommonLoader::load(temp.as_ref()).unwrap();
         assert_lines_eq(res);
