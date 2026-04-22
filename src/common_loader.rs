@@ -43,6 +43,7 @@ impl LoadFromFile<Box<dyn BufRead>> for CommonLoader {
             None => Ok(bufrd_fromraw(fd)), // no ext file, attempt direct read
             Some(ext) => match ext.to_str() {
                 Some("gz") => Ok(bufrd_fromgz(fd)),
+                Some("db") => Ok(bufrd_fromraw(fd)),
                 Some(_) => Err(LoadFromFileError::UnsupportedExtensionError),
                 None => Err(LoadFromFileError::NonUtf8ExtensionError),
             },
@@ -120,6 +121,19 @@ mod tests {
     }
 
     #[test]
+    fn test_load_from_db_file() {
+        let mut temp = Builder::new()
+            .suffix(".db")
+            .tempfile()
+            .expect("cannot create test temporary file");
+
+        temp.write_all(TEST_DATA.as_bytes()).unwrap();
+
+        let res = CommonLoader::load(temp.as_ref()).unwrap();
+        assert_lines_eq(res);
+    }
+
+    #[test]
     fn test_load_from_gz_file() {
         let mut temp = Builder::new()
             .suffix(".gz")
@@ -132,6 +146,47 @@ mod tests {
         temp.write_all(&compressed[..]).unwrap();
 
         let res = CommonLoader::load(temp.as_ref()).unwrap();
+        assert_lines_eq(res);
+    }
+    #[test]
+    fn test_load_from_unknown_suffix() {
+        let temp = Builder::new()
+            .suffix(".bad")
+            .tempfile()
+            .expect("cannot create test temporary file");
+
+        let res = CommonLoader::load(temp.as_ref());
+
+        match res {
+            Err(LoadFromFileError::UnsupportedExtensionError) => (),
+            _ => panic!("did not error out on unknown suffix"),
+        };
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_unknown_scheme_fail() {
+        let reqwest_client = reqwest::blocking::Client::new();
+        let loader = CommonLoader::new(reqwest_client);
+        // per https://www.iana.org/assignments/uri-schemes/uri-schemes.xhtml
+        let url = Url::parse("gopher://example.com/trusted.db.gz").unwrap();
+
+        let _ = loader.load_from_url(&url).unwrap();
+    }
+
+    #[test]
+    fn test_load_from_file_url() {
+        let reqwest_client = reqwest::blocking::Client::new();
+        let loader = CommonLoader::new(reqwest_client);
+        let mut temp = Builder::new()
+            .suffix(".db")
+            .tempfile()
+            .expect("cannot create test temporary file");
+        let url = Url::from_file_path(&temp).unwrap();
+
+        temp.write_all(TEST_DATA.as_bytes()).unwrap();
+
+        let res = loader.load_from_url(&url).unwrap();
         assert_lines_eq(res);
     }
 
@@ -147,7 +202,7 @@ mod tests {
         let url = Url::parse(&mock_server.uri())
             .expect(format!("failed parsing MockServer uri {}", &mock_server.uri()).as_str());
 
-        task::spawn_blocking(move || {
+        let _ = task::spawn_blocking(move || {
             let reqwest_client = reqwest::blocking::Client::new();
             let loader = CommonLoader::new(reqwest_client);
 
@@ -156,6 +211,27 @@ mod tests {
                 .expect("failed loading response from MockServer");
 
             assert_lines_eq(res);
-        });
+        }).await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_load_from_http_403() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(403).set_body_string(TEST_DATA))
+            .mount(&mock_server)
+            .await;
+
+        let url = Url::parse(&mock_server.uri())
+            .expect(format!("failed parsing MockServer uri {}", &mock_server.uri()).as_str());
+
+        task::spawn_blocking(move || {
+            let reqwest_client = reqwest::blocking::Client::new();
+            let loader = CommonLoader::new(reqwest_client);
+
+            let _ = loader.load_from_url(&url).unwrap();
+        }).await.unwrap();
     }
 }
