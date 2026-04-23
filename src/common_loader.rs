@@ -86,3 +86,26 @@ impl LoadFromURL<Box<dyn BufRead>> for CommonLoader {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_load_from_file() {
+        let test_data = "TESTDATA\nTESTADA\nTESADA";
+        let mut temp = NamedTempFile::new().unwrap();
+
+        temp.write_all(test_data.as_bytes()).unwrap();
+
+        let res = CommonLoader::load(temp.as_ref()).unwrap();
+        let mut split_loader = res.split(b'\n');
+        let mut split_data = test_data.split("\n");
+
+        while let Some(line) = split_data.next() {
+            assert_eq!(split_loader.next().unwrap().unwrap(), line.as_bytes());
+        }
+    }
+}
