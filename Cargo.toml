@@ -16,6 +16,7 @@ reqwest = { version = "0.13.1", features = ["stream"] }
 rpsl-rs = "2.0.1"
 serde = { version = "1.0.226", features = ["derive"] }
 serde_json = "1.0.145"
+thiserror = "2.0.18"
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
 toml = "0.9.8"

@@ -1,6 +1,3 @@
-use crate::common_loader::LoadFromURLError::{
-    FileLoad, HTTPRequest, HTTPStatus, UnsupportedSchema,
-};
 use async_compression::tokio::bufread::GzipDecoder;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
@@ -22,10 +19,13 @@ impl CommonLoader {
     }
 }
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum LoadFromFileError {
+    #[error("{0}")]
     Open(std::io::Error),
+    #[error("Unsupported extension")]
     UnsupportedExtension,
+    #[error("Non-UTF8 extension")]
     NonUtf8Extension,
 }
 
@@ -52,11 +52,15 @@ impl LoadFromFile<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
     }
 }
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum LoadFromURLError {
+    #[error("{0}")]
     UnsupportedSchema(String),
+    #[error("{0}")]
     HTTPRequest(Error),
+    #[error("{0}")]
     HTTPStatus(StatusCode),
+    #[error("{0}")]
     FileLoad(LoadFromFileError),
 }
 
@@ -78,7 +82,7 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     .get(url.as_str())
                     .send()
                     .await
-                    .map_err(HTTPRequest)?;
+                    .map_err(LoadFromURLError::HTTPRequest)?;
                 let status = response.status();
 
                 if status.is_success() {
@@ -97,11 +101,11 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     }
                     Ok(Box::pin(StreamReader::new(stream)))
                 } else {
-                    Err(HTTPStatus(status))
+                    Err(LoadFromURLError::HTTPStatus(status))
                 }
             }
             "file" => Self::load(url.path()).await.map_err(FileLoad),
-            scheme => Err(UnsupportedSchema(String::from(scheme))),
+            scheme => Err(LoadFromURLError::UnsupportedSchema(String::from(scheme))),
         }
     }
 }
