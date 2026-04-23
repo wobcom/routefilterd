@@ -62,6 +62,8 @@ pub enum LoadFromURLError {
     HTTPStatus(StatusCode),
     #[error("{0}")]
     FileLoad(LoadFromFileError),
+    #[error("Invalid file url")]
+    InvalidFileUrl,
 }
 
 pub trait LoadFromURL<T> {
@@ -104,7 +106,12 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     Err(LoadFromURLError::HTTPStatus(status))
                 }
             }
-            "file" => Self::load(url.path()).await.map_err(FileLoad),
+            "file" => Self::load(
+                url.to_file_path()
+                    .map_err(|_| LoadFromURLError::InvalidFileUrl)?,
+            )
+            .await
+            .map_err(LoadFromURLError::FileLoad),
             scheme => Err(LoadFromURLError::UnsupportedSchema(String::from(scheme))),
         }
     }
