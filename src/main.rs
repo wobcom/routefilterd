@@ -1,6 +1,7 @@
 use crate::api;
 use log::LevelFilter;
 use log::info;
+use routefilterd::config::parse_config;
 use routefilterd::*;
 use std::sync::Arc;
 use tokio::task;

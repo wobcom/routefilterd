@@ -1,4 +1,4 @@
-use crate::ConfigAPI;
+use crate::config::ConfigAPI;
 use crate::store;
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
