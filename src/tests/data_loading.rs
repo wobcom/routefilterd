@@ -10,6 +10,13 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const TEST_DATA: &str = "TESTDATA\nTESTADA\nTESADA";
 const WRONG_TEST_DATA: &str = "TEATATA\nTA\nTDA";
+const GZ_TEST_DATA: fn() -> Vec<u8> = || {
+    let mut compressed = Vec::new();
+    GzEncoder::new(TEST_DATA.as_bytes(), Compression::fast())
+        .read_to_end(&mut compressed)
+        .unwrap();
+    compressed
+};
 
 fn assert_lines_eq(res: Box<dyn BufRead>) {
     let mut split_loader = res.split(b'\n');
@@ -101,16 +108,17 @@ fn test_load_from_file_url() {
     assert_lines_eq(res);
 }
 
-async fn assert_load_from_http_url_with(body: &str, http_code: u16) {
+async fn assert_load_from_http_url_with(response_template: ResponseTemplate, file_path: &str) {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(http_code).set_body_string(body))
+        .respond_with(response_template)
         .mount(&mock_server)
         .await;
 
-    let url = Url::parse(&mock_server.uri())
+    let mut url = Url::parse(&mock_server.uri())
         .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", &mock_server.uri()));
+    url.set_path(file_path);
 
     let _ = task::spawn_blocking(move || {
         let reqwest_client = reqwest::blocking::Client::new();
@@ -122,22 +130,40 @@ async fn assert_load_from_http_url_with(body: &str, http_code: u16) {
 
         assert_lines_eq(res);
     })
-        .await.unwrap();
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
 async fn test_load_from_http_url() {
-    assert_load_from_http_url_with(TEST_DATA, 200).await;
+    assert_load_from_http_url_with(
+        ResponseTemplate::new(200).set_body_string(TEST_DATA),
+        "/test.db",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_load_gz_from_http_url() {
+    assert_load_from_http_url_with(
+        ResponseTemplate::new(200).set_body_bytes(GZ_TEST_DATA()),
+        "/test.db.gz",
+    )
+    .await;
 }
 
 #[tokio::test]
 #[should_panic]
-async fn test_load_from_http_url_wrong_data(){
-    assert_load_from_http_url_with(WRONG_TEST_DATA, 200).await;
+async fn test_load_from_http_url_wrong_data() {
+    assert_load_from_http_url_with(
+        ResponseTemplate::new(200).set_body_string(WRONG_TEST_DATA),
+        "/test.db",
+    )
+    .await;
 }
 
 #[tokio::test]
 #[should_panic]
 async fn test_load_from_http_403() {
-    assert_load_from_http_url_with(TEST_DATA, 403).await;
+    assert_load_from_http_url_with(ResponseTemplate::new(403), "/test.db").await;
 }
