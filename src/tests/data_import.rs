@@ -1,28 +1,10 @@
-use crate::common_loader::{LoadFromURL, LoadFromURLError};
 use crate::store_importer::*;
-use mockall::mock;
-use reqwest::Url;
-use std::io::{BufRead, BufReader};
-use stringreader::StringReader;
+use futures_util::StreamExt;
 
-mock! {
-    pub CommonLoader {
-    }
-
-    impl LoadFromURL<Box<dyn BufRead>> for CommonLoader {
-        fn load_from_url(&self, url: &Url) -> Result<Box<dyn BufRead>, LoadFromURLError> {
-        }
-    }
-}
-
-#[test]
-fn test_rpsl_preparser_iter() {
-    let mut mockloader = MockCommonLoader::new();
-    let url = Url::parse("http://localhost").unwrap();
-
-    mockloader.expect_load_from_url().times(1).returning(|_| {
-        Ok(Box::new(BufReader::new(StringReader::new(
-            "
+#[tokio::test]
+async fn test_rpsl_preparser_iter() {
+    let parser = parse_rpsl(Box::pin(
+        &b"
 #
 # The contents of this file are subject to
 # RIPE Database Terms and Conditions
@@ -87,18 +69,22 @@ remarks:        * data has been removed from this object.
 remarks:        * To view the original object, please query the RIPE Database at:
 remarks:        * http://www.ripe.net/whois
 remarks:        ****************************
-",
-        ))))
-    });
-
-    let mut parser = RpslParser::new_from_url(Box::new(mockloader), &url).unwrap();
+"[..],
+    ));
+    let mut parser = std::pin::pin!(parser);
 
     // TODO fix implementation, should not yield newlines, only objects
-    assert_eq!(parser.next(), Some(String::from("\n")));
-    assert_eq!(parser.next(), Some(String::from("\n")));
+    assert_eq!(
+        parser.next().await.transpose().unwrap(),
+        Some(String::from("\n"))
+    );
+    assert_eq!(
+        parser.next().await.transpose().unwrap(),
+        Some(String::from("\n"))
+    );
 
     assert_eq!(
-        parser.next(),
+        parser.next().await.transpose().unwrap(),
         Some(String::from(
             "as-set:         AS-RESTENA
 descr:          Reseau Teleinformatique de l'Education Nationale
@@ -129,7 +115,7 @@ remarks:        ****************************
     );
 
     assert_eq!(
-        parser.next(),
+        parser.next().await.transpose().unwrap(),
         Some(String::from(
             "as-set:         AS-RENATER
 descr:          RENATER

@@ -2,9 +2,11 @@ use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromFileError,
 use flate2::Compression;
 use flate2::bufread::GzEncoder;
 use reqwest::Url;
-use std::io::{BufRead, Read, Write};
+use std::io::{Read, Write};
+use std::pin::Pin;
 use tempfile::{Builder, NamedTempFile};
-use tokio::task;
+use tokio::io::AsyncBufRead;
+use tokio::io::AsyncBufReadExt;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -18,27 +20,27 @@ const GZ_TEST_DATA: fn() -> Vec<u8> = || {
     compressed
 };
 
-fn assert_lines_eq(res: Box<dyn BufRead>) {
-    let mut split_loader = res.split(b'\n');
+async fn assert_lines_eq(res: Pin<Box<dyn AsyncBufRead + Send>>) {
+    let mut split_loader = res.lines();
     let split_data = TEST_DATA.split("\n");
 
     for line in split_data {
-        assert_eq!(split_loader.next().unwrap().unwrap(), line.as_bytes());
+        assert_eq!(split_loader.next_line().await.unwrap().unwrap(), line);
     }
 }
 
-#[test]
-fn test_load_from_raw_file() {
+#[tokio::test]
+async fn test_load_from_raw_file() {
     let mut temp = NamedTempFile::new().unwrap();
 
     temp.write_all(TEST_DATA.as_bytes()).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).unwrap();
-    assert_lines_eq(res);
+    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    assert_lines_eq(res).await;
 }
 
-#[test]
-fn test_load_from_db_file() {
+#[tokio::test]
+async fn test_load_from_db_file() {
     let mut temp = Builder::new()
         .suffix(".db")
         .tempfile()
@@ -46,12 +48,12 @@ fn test_load_from_db_file() {
 
     temp.write_all(TEST_DATA.as_bytes()).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).unwrap();
-    assert_lines_eq(res);
+    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    assert_lines_eq(res).await;
 }
 
-#[test]
-fn test_load_from_gz_file() {
+#[tokio::test]
+async fn test_load_from_gz_file() {
     let mut temp = Builder::new()
         .suffix(".gz")
         .tempfile()
@@ -62,18 +64,18 @@ fn test_load_from_gz_file() {
     gz_encoder.read_to_end(&mut compressed).unwrap();
     temp.write_all(&compressed[..]).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).unwrap();
-    assert_lines_eq(res);
+    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    assert_lines_eq(res).await;
 }
 
-#[test]
-fn test_load_from_unknown_suffix() {
+#[tokio::test]
+async fn test_load_from_unknown_suffix() {
     let temp = Builder::new()
         .suffix(".bad")
         .tempfile()
         .expect("cannot create test temporary file");
 
-    let res = CommonLoader::load(temp.as_ref());
+    let res = CommonLoader::load(temp.as_ref()).await;
 
     match res {
         Err(LoadFromFileError::UnsupportedExtension) => (),
@@ -81,20 +83,20 @@ fn test_load_from_unknown_suffix() {
     };
 }
 
-#[test]
+#[tokio::test]
 #[should_panic]
-fn test_unknown_scheme_fail() {
-    let reqwest_client = reqwest::blocking::Client::new();
+async fn test_unknown_scheme_fail() {
+    let reqwest_client = reqwest::Client::new();
     let loader = CommonLoader::new(reqwest_client);
     // per https://www.iana.org/assignments/uri-schemes/uri-schemes.xhtml
     let url = Url::parse("gopher://example.com/trusted.db.gz").unwrap();
 
-    let _ = loader.load_from_url(&url).unwrap();
+    let _ = loader.load_from_url(&url).await.unwrap();
 }
 
-#[test]
-fn test_load_from_file_url() {
-    let reqwest_client = reqwest::blocking::Client::new();
+#[tokio::test]
+async fn test_load_from_file_url() {
+    let reqwest_client = reqwest::Client::new();
     let loader = CommonLoader::new(reqwest_client);
     let mut temp = Builder::new()
         .suffix(".db")
@@ -104,8 +106,8 @@ fn test_load_from_file_url() {
 
     temp.write_all(TEST_DATA.as_bytes()).unwrap();
 
-    let res = loader.load_from_url(&url).unwrap();
-    assert_lines_eq(res);
+    let res = loader.load_from_url(&url).await.unwrap();
+    assert_lines_eq(res).await;
 }
 
 async fn assert_load_from_http_url_with(response_template: ResponseTemplate, file_path: &str) {
@@ -120,18 +122,15 @@ async fn assert_load_from_http_url_with(response_template: ResponseTemplate, fil
         .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", &mock_server.uri()));
     url.set_path(file_path);
 
-    let _ = task::spawn_blocking(move || {
-        let reqwest_client = reqwest::blocking::Client::new();
-        let loader = CommonLoader::new(reqwest_client);
+    let reqwest_client = reqwest::Client::new();
+    let loader = CommonLoader::new(reqwest_client);
 
-        let res = loader
-            .load_from_url(&url)
-            .expect("failed loading response from MockServer");
+    let res = loader
+        .load_from_url(&url)
+        .await
+        .expect("failed loading response from MockServer");
 
-        assert_lines_eq(res);
-    })
-    .await
-    .unwrap();
+    assert_lines_eq(res).await;
 }
 
 #[tokio::test]

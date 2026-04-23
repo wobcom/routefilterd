@@ -1,10 +1,11 @@
+use futures_util::Stream;
+use futures_util::StreamExt;
 use log::trace;
 use regex::Regex;
 use rpsl::parse_object;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
-use tokio::task;
 
 static ASN_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^AS[0-9]+$").unwrap());
 static ASSET_REGEX: LazyLock<Regex> =
@@ -80,17 +81,15 @@ impl DataStore {
         d.into_iter().map(|(s, _)| s).collect() // return keys
     }
 
-    pub fn import_objects<T: Iterator<Item = String>>(
+    pub async fn import_objects(
         self: &Arc<Self>,
         data_source: &str,
-        objects: T,
-    ) -> Result<(), String> {
-        for object in objects {
+        mut objects: impl Stream<Item = std::io::Result<String>> + Unpin,
+    ) -> std::io::Result<()> {
+        while let Some(object) = objects.next().await.transpose()? {
             let arc_cloned = self.clone();
             let source_cloned = data_source.to_owned();
-            task::spawn(async move {
-                let _ = arc_cloned.import_object(source_cloned, object);
-            });
+            let _ = arc_cloned.import_object(source_cloned, object);
         }
         Ok(())
     }

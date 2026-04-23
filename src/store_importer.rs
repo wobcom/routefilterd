@@ -1,79 +1,73 @@
-use crate::common_loader::{CommonLoader, LoadFromURL, LoadFromURLError};
+use crate::common_loader::{CommonLoader, LoadFromURL};
 use crate::store::DataStore;
+use futures_util::Stream;
 use log::{info, trace};
 use reqwest::Url;
-use std::io::BufRead;
-use std::io::Lines;
 use std::sync::Arc;
+use tokio::io::AsyncBufRead;
+use tokio::io::AsyncBufReadExt;
 
-pub struct RpslParser {
-    reader: Lines<Box<dyn BufRead>>,
-    line_num: u64,
-    obj_num: u64,
-}
-impl RpslParser {
-    pub fn new(buf: Box<dyn BufRead>) -> Self {
-        Self {
-            reader: buf.lines(),
-            line_num: 0,
-            obj_num: 0,
-        }
-    }
-    pub fn new_from_url(
-        loader: Box<dyn LoadFromURL<Box<dyn BufRead>>>,
-        url: &Url,
-    ) -> Result<Self, LoadFromURLError> {
-        let b = loader.load_from_url(url)?;
-        Ok(Self::new(b))
-    }
-}
+pub fn parse_rpsl(
+    source: impl AsyncBufRead + Send + Unpin,
+) -> impl Stream<Item = std::io::Result<String>> {
+    let mut reader = source.lines();
+    let mut object_buf = String::with_capacity(8192);
+    let mut line_num = 0;
+    let mut obj_num = 0;
 
-impl Iterator for RpslParser {
-    type Item = String;
+    async_stream::try_stream! {
+        loop {
+            let line = match reader.next_line().await {
+                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                    trace!("ignoring line: {}", e);
+                    continue;
+                },
+                Err(e) => Err(e)?,
+                Ok(Some(l)) => l,
+                Ok(None) => break,
+            };
+            line_num += 1;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut object_buf = String::with_capacity(8192);
-
-        while let Some(line) = self.reader.next() {
-            let l = line.unwrap_or_else(|err| {
-                trace!("Error encountered reading line {}: {}", self.line_num, err);
-                "".to_string()
-            });
-            self.line_num += 1;
-
-            if l.starts_with("#") {
+            if line.starts_with("#") {
                 // Ignore comments and empty lines
                 continue;
             }
-            object_buf.push_str(&l);
+            object_buf.push_str(&line);
             object_buf.push('\n');
 
-            if l.is_empty() && !object_buf.is_empty() {
-                self.obj_num += 1;
-                return Some(object_buf);
+            if line.is_empty() && !object_buf.is_empty() {
+                obj_num += 1;
+                yield std::mem::replace(&mut object_buf, String::with_capacity(8192));
             }
         }
 
         if !object_buf.is_empty() {
             // Yield last object
-            return Some(object_buf);
+            yield std::mem::replace(&mut object_buf, String::with_capacity(8192));
         }
 
         info!(
             "Successfully parsed {} lines into {} objects.",
-            self.line_num, self.obj_num
+            line_num, obj_num
         );
-        None
     }
 }
 
-pub fn import_source(store: &Arc<DataStore>, name: &str, file: String, _cache_dir: String) {
-    let loader = CommonLoader::new(reqwest::blocking::Client::new());
+pub async fn import_source(store: &Arc<DataStore>, name: &str, url: String, _cache_dir: String) {
+    let loader = CommonLoader::new(reqwest::Client::new());
 
-    info!("Importing {}", &file);
-    let _ = store.import_objects(
-        name,
-        RpslParser::new_from_url(Box::new(loader), &Url::parse(&file).unwrap()).unwrap(),
-    );
-    info!("Done importing {}", &file);
+    info!("Importing {}", &url);
+    store
+        .import_objects(
+            name,
+            Box::pin(parse_rpsl(
+                loader
+                    .load_from_url(&Url::parse(&url).unwrap())
+                    .await
+                    .unwrap(),
+            )),
+        )
+        .await
+        .unwrap();
+    info!("Done importing {}", &url);
 }
