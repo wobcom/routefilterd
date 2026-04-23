@@ -9,6 +9,7 @@ use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const TEST_DATA: &str = "TESTDATA\nTESTADA\nTESADA";
+const WRONG_TEST_DATA: &str = "TEATATA\nTA\nTDA";
 
 fn assert_lines_eq(res: Box<dyn BufRead>) {
     let mut split_loader = res.split(b'\n');
@@ -100,12 +101,11 @@ fn test_load_from_file_url() {
     assert_lines_eq(res);
 }
 
-#[tokio::test]
-async fn test_load_from_http_url() {
+async fn assert_load_from_http_url_with(body: &str, http_code: u16) {
     let mock_server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(TEST_DATA))
+        .respond_with(ResponseTemplate::new(http_code).set_body_string(body))
         .mount(&mock_server)
         .await;
 
@@ -122,28 +122,22 @@ async fn test_load_from_http_url() {
 
         assert_lines_eq(res);
     })
-    .await;
+        .await.unwrap();
+}
+
+#[tokio::test]
+async fn test_load_from_http_url() {
+    assert_load_from_http_url_with(TEST_DATA, 200).await;
+}
+
+#[tokio::test]
+#[should_panic]
+async fn test_load_from_http_url_wrong_data(){
+    assert_load_from_http_url_with(WRONG_TEST_DATA, 200).await;
 }
 
 #[tokio::test]
 #[should_panic]
 async fn test_load_from_http_403() {
-    let mock_server = MockServer::start().await;
-
-    Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(403).set_body_string(TEST_DATA))
-        .mount(&mock_server)
-        .await;
-
-    let url = Url::parse(&mock_server.uri())
-        .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", &mock_server.uri()));
-
-    task::spawn_blocking(move || {
-        let reqwest_client = reqwest::blocking::Client::new();
-        let loader = CommonLoader::new(reqwest_client);
-
-        let _ = loader.load_from_url(&url).unwrap();
-    })
-    .await
-    .unwrap();
+    assert_load_from_http_url_with(TEST_DATA, 403).await;
 }
