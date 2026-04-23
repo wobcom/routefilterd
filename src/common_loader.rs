@@ -92,20 +92,52 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
+    use tokio::task;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    #[test]
-    fn test_load_from_file() {
-        let test_data = "TESTDATA\nTESTADA\nTESADA";
-        let mut temp = NamedTempFile::new().unwrap();
+    const TEST_DATA: &str = "TESTDATA\nTESTADA\nTESADA";
 
-        temp.write_all(test_data.as_bytes()).unwrap();
-
-        let res = CommonLoader::load(temp.as_ref()).unwrap();
+    fn assert_lines_eq(res: Box<dyn BufRead>) {
         let mut split_loader = res.split(b'\n');
-        let mut split_data = test_data.split("\n");
+        let mut split_data = TEST_DATA.split("\n");
 
         while let Some(line) = split_data.next() {
             assert_eq!(split_loader.next().unwrap().unwrap(), line.as_bytes());
         }
+    }
+
+    #[test]
+    fn test_load_from_file() {
+        let mut temp = NamedTempFile::new().unwrap();
+
+        temp.write_all(TEST_DATA.as_bytes()).unwrap();
+
+        let res = CommonLoader::load(temp.as_ref()).unwrap();
+        assert_lines_eq(res);
+    }
+
+    #[tokio::test]
+    async fn test_load_from_http_url() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(TEST_DATA))
+            .mount(&mock_server)
+            .await;
+
+        let url = Url::parse(&mock_server.uri())
+            .expect(format!("failed parsing MockServer uri {}", &mock_server.uri()).as_str());
+
+        task::spawn_blocking(move || {
+            let reqwest_client = reqwest::blocking::Client::new();
+            let loader = CommonLoader::new(reqwest_client);
+
+            let res = loader
+                .load_from_url(&url)
+                .expect("failed loading response from MockServer");
+
+            assert_lines_eq(res);
+        });
     }
 }
