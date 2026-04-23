@@ -11,7 +11,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: show tooling versions
+      run: |
+        cargo -V
+        cargo fmt -- -V
+        cargo clippy -V
     - uses: actions/checkout@v4
+    - uses: taiki-e/install-action@cargo-llvm-cov
     - uses: actions/cache@v5
       with:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
@@ -23,5 +29,7 @@ jobs:
           target/
     - name: check formatting
       run: cargo fmt -v --check
-    - name: run tests
-      run: cargo test --verbose
+    - name: check linting
+      run: cargo clippy --all-targets --all-features -- -D warnings
+    - name: run tests and report coverage
+      run: cargo llvm-cov
