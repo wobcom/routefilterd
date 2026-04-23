@@ -49,8 +49,8 @@ fn default_recursion_depth() -> u32 {
 pub struct ConfigDataSources {
     pub import_sources: Vec<String>,
     // TODO: Implement downloads
-    import_serial: Option<String>,
-    nrtm_host: Option<String>,
+    // import_serial: Option<String>,
+    // nrtm_host: Option<String>,
     // TODO: Implement NRTM
     #[serde(default)]
     pub serial: u64,

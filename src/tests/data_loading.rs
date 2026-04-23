@@ -12,9 +12,9 @@ const TEST_DATA: &str = "TESTDATA\nTESTADA\nTESADA";
 
 fn assert_lines_eq(res: Box<dyn BufRead>) {
     let mut split_loader = res.split(b'\n');
-    let mut split_data = TEST_DATA.split("\n");
+    let split_data = TEST_DATA.split("\n");
 
-    while let Some(line) = split_data.next() {
+    for line in split_data {
         assert_eq!(split_loader.next().unwrap().unwrap(), line.as_bytes());
     }
 }
@@ -68,7 +68,7 @@ fn test_load_from_unknown_suffix() {
     let res = CommonLoader::load(temp.as_ref());
 
     match res {
-        Err(LoadFromFileError::UnsupportedExtensionError) => (),
+        Err(LoadFromFileError::UnsupportedExtension) => (),
         _ => panic!("did not error out on unknown suffix"),
     };
 }
@@ -110,7 +110,7 @@ async fn test_load_from_http_url() {
         .await;
 
     let url = Url::parse(&mock_server.uri())
-        .expect(format!("failed parsing MockServer uri {}", &mock_server.uri()).as_str());
+        .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", &mock_server.uri()));
 
     let _ = task::spawn_blocking(move || {
         let reqwest_client = reqwest::blocking::Client::new();
@@ -136,7 +136,7 @@ async fn test_load_from_http_403() {
         .await;
 
     let url = Url::parse(&mock_server.uri())
-        .expect(format!("failed parsing MockServer uri {}", &mock_server.uri()).as_str());
+        .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", &mock_server.uri()));
 
     task::spawn_blocking(move || {
         let reqwest_client = reqwest::blocking::Client::new();

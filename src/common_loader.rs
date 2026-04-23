@@ -1,5 +1,5 @@
 use crate::common_loader::LoadFromURLError::{
-    FileError, HTTPError, RequestError, UnsupportedSchemaError,
+    FileLoad, HTTPRequest, HTTPStatus, UnsupportedSchema,
 };
 use flate2::bufread::GzDecoder;
 use reqwest::{Error, StatusCode, Url};
@@ -19,9 +19,9 @@ impl CommonLoader {
 
 #[derive(Debug)]
 pub enum LoadFromFileError {
-    OpenError(std::io::Error),
-    UnsupportedExtensionError,
-    NonUtf8ExtensionError,
+    Open(std::io::Error),
+    UnsupportedExtension,
+    NonUtf8Extension,
 }
 
 pub trait LoadFromFile<T> {
@@ -37,15 +37,15 @@ impl LoadFromFile<Box<dyn BufRead>> for CommonLoader {
             Box::new(BufReader::new(GzDecoder::new(BufReader::new(fd))))
         }
 
-        let fd = File::open(&path).map_err(LoadFromFileError::OpenError)?;
+        let fd = File::open(&path).map_err(LoadFromFileError::Open)?;
 
         match path.as_ref().extension() {
             None => Ok(bufrd_fromraw(fd)), // no ext file, attempt direct read
             Some(ext) => match ext.to_str() {
                 Some("gz") => Ok(bufrd_fromgz(fd)),
                 Some("db") => Ok(bufrd_fromraw(fd)),
-                Some(_) => Err(LoadFromFileError::UnsupportedExtensionError),
-                None => Err(LoadFromFileError::NonUtf8ExtensionError),
+                Some(_) => Err(LoadFromFileError::UnsupportedExtension),
+                None => Err(LoadFromFileError::NonUtf8Extension),
             },
         }
     }
@@ -53,10 +53,10 @@ impl LoadFromFile<Box<dyn BufRead>> for CommonLoader {
 
 #[derive(Debug)]
 pub enum LoadFromURLError {
-    UnsupportedSchemaError(String),
-    RequestError(Error),
-    HTTPError(StatusCode),
-    FileError(LoadFromFileError),
+    UnsupportedSchema(String),
+    HTTPRequest(Error),
+    HTTPStatus(StatusCode),
+    FileLoad(LoadFromFileError),
 }
 
 pub trait LoadFromURL<T> {
@@ -73,17 +73,17 @@ impl LoadFromURL<Box<dyn BufRead>> for CommonLoader {
                     .http_client
                     .get(url.as_str())
                     .send()
-                    .map_err(RequestError)?;
+                    .map_err(HTTPRequest)?;
                 let status = response.status();
 
                 if status.is_success() {
                     Ok(Box::new(BufReader::new(response)))
                 } else {
-                    Err(HTTPError(status))
+                    Err(HTTPStatus(status))
                 }
             }
-            "file" => Self::load(url.path()).map_err(FileError),
-            scheme @ _ => Err(UnsupportedSchemaError(String::from(scheme))),
+            "file" => Self::load(url.path()).map_err(FileLoad),
+            scheme => Err(UnsupportedSchema(String::from(scheme))),
         }
     }
 }

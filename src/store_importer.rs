@@ -1,7 +1,7 @@
 use crate::common_loader::{CommonLoader, LoadFromURL, LoadFromURLError};
 use crate::store::DataStore;
 use log::{info, trace};
-use reqwest::{StatusCode, Url};
+use reqwest::Url;
 use std::io::BufRead;
 use std::io::Lines;
 use std::sync::Arc;
@@ -39,22 +39,22 @@ impl Iterator for RpslParser {
                 trace!("Error encountered reading line {}: {}", self.line_num, err);
                 "".to_string()
             });
-            self.line_num = self.line_num + 1;
+            self.line_num += 1;
 
             if l.starts_with("#") {
                 // Ignore comments and empty lines
                 continue;
             }
             object_buf.push_str(&l);
-            object_buf.push_str("\n");
+            object_buf.push('\n');
 
-            if l.eq("") && !object_buf.eq("") {
-                self.obj_num = self.obj_num + 1;
+            if l.is_empty() && !object_buf.is_empty() {
+                self.obj_num += 1;
                 return Some(object_buf);
             }
         }
 
-        if !object_buf.eq("") {
+        if !object_buf.is_empty() {
             // Yield last object
             return Some(object_buf);
         }
@@ -67,12 +67,12 @@ impl Iterator for RpslParser {
     }
 }
 
-pub fn import_source(store: &Arc<DataStore>, name: &String, file: String, _cache_dir: String) {
+pub fn import_source(store: &Arc<DataStore>, name: &str, file: String, _cache_dir: String) {
     let loader = CommonLoader::new(reqwest::blocking::Client::new());
 
     info!("Importing {}", &file);
     let _ = store.import_objects(
-        &name,
+        name,
         RpslParser::new_from_url(Box::new(loader), &Url::parse(&file).unwrap()).unwrap(),
     );
     info!("Done importing {}", &file);

@@ -29,7 +29,7 @@ async fn main() {
         let cache_dir = config.cache_dir.clone();
         task::spawn_blocking(move || {
             // TODO: Move all of this out of main.rs
-            let _ = store_cloned.new_data_source(name.clone(), options.serial, options.priority);
+            store_cloned.new_data_source(name.clone(), options.serial, options.priority);
             for file in options.import_sources {
                 store_importer::import_source(&store_cloned, &name, file, cache_dir.clone());
             }

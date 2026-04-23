@@ -18,7 +18,7 @@ pub struct DataStore {
 
 #[derive(Clone)]
 pub struct DataSource {
-    serial: u64,
+    // serial: u64,
     priority: i64,
 }
 
@@ -42,6 +42,12 @@ pub struct AsRoutes {
     prefixes: Vec<String>,
 }
 
+impl Default for DataStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataStore {
     pub fn new() -> Self {
         Self {
@@ -51,17 +57,16 @@ impl DataStore {
         }
     }
 
-    pub fn new_data_source(self: &Arc<Self>, name: String, serial: u64, priority: i64) {
+    pub fn new_data_source(self: &Arc<Self>, name: String, _serial: u64, priority: i64) {
         self.datasources.lock().unwrap().insert(
             name,
             DataSource {
-                serial: serial,
-                priority: priority,
+                /* serial, */ priority,
             },
         );
     }
 
-    fn get_sorted_data_sources(&self, exclude: &Vec<String>) -> Vec<String> {
+    fn get_sorted_data_sources(&self, exclude: &[String]) -> Vec<String> {
         // TODO: Data source sorting
         let mut d = self
             .datasources
@@ -71,23 +76,23 @@ impl DataStore {
             .into_iter()
             .filter(|(s, _)| !exclude.contains(s)) // drop excluded
             .collect::<Vec<(String, DataSource)>>();
-        d.sort_by(|a, b| b.1.priority.cmp(&a.1.priority)); // sort by prio
-        return d.into_iter().map(|(s, _)| s).collect(); // return keys
+        d.sort_by_key(|ds| std::cmp::Reverse(ds.1.priority)); // sort by prio
+        d.into_iter().map(|(s, _)| s).collect() // return keys
     }
 
     pub fn import_objects<T: Iterator<Item = String>>(
         self: &Arc<Self>,
-        data_source: &String,
+        data_source: &str,
         objects: T,
     ) -> Result<(), String> {
         for object in objects {
             let arc_cloned = self.clone();
-            let source_cloned = data_source.clone();
+            let source_cloned = data_source.to_owned();
             task::spawn(async move {
                 let _ = arc_cloned.import_object(source_cloned, object);
             });
         }
-        return Ok(());
+        Ok(())
     }
 
     fn clean_string(text: &str) -> String {
@@ -99,7 +104,7 @@ impl DataStore {
         }
 
         // Remove whitespace on both ends and uppercase
-        return cleaned_text.trim().to_uppercase();
+        cleaned_text.trim().to_uppercase()
     }
 
     fn parse_members(members: Vec<&str>) -> (Vec<String>, Vec<String>) {
@@ -141,7 +146,7 @@ impl DataStore {
         assets.sort();
         assets.dedup();
 
-        return (asns, assets);
+        (asns, assets)
     }
 
     pub fn import_object(&self, data_source: String, object_buf: String) -> Result<(), String> {
@@ -152,7 +157,7 @@ impl DataStore {
         let result = parsed.unwrap();
         let obj_type = result[0].name.to_string();
         let obj_name_content = result[0].value.with_content();
-        if obj_name_content.len() == 0 {
+        if obj_name_content.is_empty() {
             trace!("Skipped object type {} and no name", obj_type);
             return Err("".to_string());
         }
@@ -165,7 +170,7 @@ impl DataStore {
                 self.as_sets.lock().unwrap().insert(
                     (data_source.clone(), obj_name),
                     AsSet {
-                        asns: asns,
+                        asns,
                         as_sets: assets,
                     },
                 );
@@ -202,24 +207,23 @@ impl DataStore {
                 return Some(res.clone());
             }
         }
-        return None;
+        None
     }
 
     pub fn query_as_set(
         &self,
         data_sources: Vec<String>,
         as_set: String,
-        ignore_datasource: &Vec<String>,
+        ignore_datasource: &[String],
     ) -> Option<AsSet> {
-        let datasources: Vec<String>;
-        if data_sources.clone().len() == 0 {
-            datasources = self.get_sorted_data_sources(&ignore_datasource);
+        let datasources: Vec<String> = if data_sources.clone().is_empty() {
+            self.get_sorted_data_sources(ignore_datasource)
         } else {
-            datasources = data_sources
+            data_sources
                 .into_iter()
                 .filter(|s| !&ignore_datasource.contains(s)) // drop excluded
-                .collect();
-        }
+                .collect()
+        };
         for data_source in datasources {
             if let Some(res) = self
                 .as_sets
@@ -230,7 +234,7 @@ impl DataStore {
                 return Some(res.clone());
             }
         }
-        return None;
+        None
     }
 
     pub fn query_as_set_recursive(
@@ -262,7 +266,7 @@ impl DataStore {
 
         // TODO: yeah, uh
         let dummy = AsSet::new();
-        let data_sources = self.get_sorted_data_sources(&ignore_datasource);
+        let data_sources = self.get_sorted_data_sources(ignore_datasource);
 
         let res = self
             .query_as_set(data_sources, as_set, &Vec::new())
@@ -296,10 +300,10 @@ impl DataStore {
     ) -> Option<Vec<String>> {
         // TODO: add ignore_as_sets
         let as_list = self
-            .query_as_set_recursive(as_set, depth, ignore_as_sets.clone(), &ignore_datasource)
+            .query_as_set_recursive(as_set, depth, ignore_as_sets.clone(), ignore_datasource)
             .unwrap();
         let mut prefixes: Vec<String> = vec![];
-        let data_sources = self.get_sorted_data_sources(&ignore_datasource);
+        let data_sources = self.get_sorted_data_sources(ignore_datasource);
 
         for asn in as_list {
             prefixes.append(
