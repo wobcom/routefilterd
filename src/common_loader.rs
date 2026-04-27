@@ -1,4 +1,5 @@
 use async_compression::tokio::bufread::GzipDecoder;
+use file_type::FileType;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use reqwest::{Error, StatusCode, Url};
@@ -11,6 +12,10 @@ use tokio_util::io::StreamReader;
 
 pub struct CommonLoader {
     http_client: reqwest::Client,
+}
+
+mod supported_mime_types {
+    pub const APPLICATION_GZIP: &str = "application/gzip";
 }
 
 impl CommonLoader {
@@ -95,13 +100,16 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                             .peekable(),
                     );
                     if let Some(Ok(first_bytes)) = stream.as_mut().peek().await
-                        && first_bytes.starts_with(b"\x1f\x8b")
+                        && FileType::from_bytes(first_bytes)
+                            .media_types()
+                            .contains(&supported_mime_types::APPLICATION_GZIP)
                     {
                         let reader = StreamReader::new(stream);
                         let decompressed = GzipDecoder::new(reader);
-                        return Ok(Box::pin(BufReader::new(decompressed)));
+                        Ok(Box::pin(BufReader::new(decompressed)))
+                    } else {
+                        Ok(Box::pin(StreamReader::new(stream)))
                     }
-                    Ok(Box::pin(StreamReader::new(stream)))
                 } else {
                     Err(LoadFromURLError::HTTPStatus(status))
                 }
