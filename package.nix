@@ -1,6 +1,7 @@
 {
   buildRustPackage,
   routefilterd-version,
+  cacert,
 }:
 
 buildRustPackage rec {
@@ -9,4 +10,8 @@ buildRustPackage rec {
   
   cargoLock.lockFile = ./Cargo.lock;
   src = ./.;
+
+  buildInputs = [
+     cacert
+  ];
 }
