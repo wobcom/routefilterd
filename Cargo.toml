@@ -7,6 +7,7 @@ edition = "2024"
 async-compression = { version = "0.4.41", features = ["gzip", "tokio"] }
 async-stream = "0.3.6"
 axum = { version = "0.8", default-features = false, features = ["query", "http1", "tokio"] }
+file_type = "0.8.11"
 flate2 = "1.1.5"
 futures-util = "0.3.31"
 http = "1.3.1"
