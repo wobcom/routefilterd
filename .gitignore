@@ -3,3 +3,8 @@
 /cache
 /result
 *swp
+grcov*.profraw
+coverage/*
+.direnv/
+.idea/
+**~

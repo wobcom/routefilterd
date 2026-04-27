@@ -1,4 +1,4 @@
-use crate::ConfigAPI;
+use crate::config::ConfigAPI;
 use crate::store;
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
@@ -35,21 +35,20 @@ async fn get_route_from_as_set(
     let name = query.name.clone();
     let recursion_depth = query
         .recursion_depth
-        .or(Some(state.config.default_recursion_depth))
-        .unwrap();
+        .unwrap_or(state.config.default_recursion_depth);
     let ignore_as_sets = query
         .ignore_as_sets
         .clone()
         .split(',')
         .map(|a| a.to_string())
-        .filter(|a| a != "")
+        .filter(|a| !a.is_empty())
         .collect::<Vec<String>>();
     let ignore_datasource = query
         .ignore_datasource
         .clone()
         .split(',')
         .map(|a| a.to_string())
-        .filter(|a| a != "")
+        .filter(|a| !a.is_empty())
         .collect::<Vec<String>>();
     if let Some(mut value) = state.store.query_as_set_prefixes_recursive(
         name.to_string(),
@@ -66,9 +65,9 @@ async fn get_route_from_as_set(
             value.len()
         );
         response.push_str(&serde_json::to_string_pretty(&value).unwrap());
-        return response;
+        response
     } else {
-        return format!("Value for '{}' not found in cache.", name);
+        format!("Value for '{}' not found in cache.", name)
     }
 }
 
@@ -80,21 +79,20 @@ async fn get_asn_from_as_set(
     let name = query.name.clone();
     let recursion_depth = query
         .recursion_depth
-        .or(Some(state.config.default_recursion_depth))
-        .unwrap();
+        .unwrap_or(state.config.default_recursion_depth);
     let ignore_as_sets = query
         .ignore_as_sets
         .clone()
         .split(',')
         .map(|a| a.to_string())
-        .filter(|a| a != "")
+        .filter(|a| !a.is_empty())
         .collect::<Vec<String>>();
     let ignore_datasource = query
         .ignore_datasource
         .clone()
         .split(',')
         .map(|a| a.to_string())
-        .filter(|a| a != "")
+        .filter(|a| !a.is_empty())
         .collect::<Vec<String>>();
     if let Some(mut value) = state.store.query_as_set_recursive(
         name.to_string(),
@@ -111,9 +109,9 @@ async fn get_asn_from_as_set(
             value.len()
         );
         response.push_str(&serde_json::to_string_pretty(&value).unwrap());
-        return response;
+        response
     } else {
-        return format!("Value for '{}' not found in cache.", name);
+        format!("Value for '{}' not found in cache.", name)
     }
 }
 
@@ -128,14 +126,14 @@ async fn get_as_set(
         .clone()
         .split(',')
         .map(|a| a.to_string())
-        .filter(|a| a != "")
+        .filter(|a| !a.is_empty())
         .collect::<Vec<String>>();
     let datasources = query
         .datasources
         .clone()
         .split(',')
         .map(|a| a.to_string())
-        .filter(|a| a != "")
+        .filter(|a| !a.is_empty())
         .collect::<Vec<String>>();
     if let Some(mut value) =
         state
@@ -154,9 +152,9 @@ async fn get_as_set(
             result.len()
         );
         response.push_str(&serde_json::to_string_pretty(&result).unwrap());
-        return response;
+        response
     } else {
-        return format!("AS-SET '{}' not found in cache.", name);
+        format!("AS-SET '{}' not found in cache.", name)
     }
 }
 
