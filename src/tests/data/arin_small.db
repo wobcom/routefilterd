@@ -1,0 +1,116 @@
+as-set:         AS-WIKIMEDIA-ARIN
+descr:          Wikimedia Foundation ASNs Assigned by ARIN
+members:        AS14907, AS11820
+mbrs-by-ref:    MNT-WIKIM, MNT-WOI-ARIN
+admin-c:        WIKIM-ARIN
+tech-c:         MBE96-ARIN
+tech-c:         MOONE85-ARIN
+tech-c:         YOUNS-ARIN
+mnt-by:         MNT-WIKIM
+created:        2023-03-30T18:47:08Z
+last-modified:  2023-12-19T10:54:29Z
+source:         ARIN
+
+route:          198.35.26.0/24
+descr:          Wikimedia ulsfo
+origin:         AS14907
+mnt-by:         MNT-WIKIM
+changed:        ayounsi@wikimedia.org 20200520
+source:         ARIN
+
+route:          198.35.27.0/24
+descr:          Wikimedia anycast
+origin:         AS14907
+mnt-by:         MNT-WIKIM
+changed:        ayounsi@wikimedia.org 20200520
+source:         ARIN
+
+route:          198.73.209.0/24
+descr:          Wikimedia Foundation, Inc.
+descr:          Corporate Headquarters - Office Network
+descr:          149 New Montgomery Street - 6th Floor
+descr:          San Francisco, CA 94105
+descr:          US
+origin:         AS11820
+mnt-by:         MNT-WF-44
+changed:        officeit-bgp@wikimedia.org 20140426
+source:         ARIN
+
+route6:         2620:62:c000::/48
+descr:          Wikimedia Foundation, Inc.
+descr:          Corporate Headquarters - Office Network
+descr:          149 New Montgomery Street - 6th Floor
+descr:          San Francisco, CA 94105
+descr:          US
+origin:         AS11820
+mnt-by:         MNT-WF-44
+changed:        officeit-bgp@wikimedia.org 20140422
+source:         ARIN
+
+route:          208.80.152.0/23
+descr:          Wikimedia codfw
+origin:         AS14907
+mnt-by:         MNT-WIKIM
+changed:        ayounsi@wikimedia.org 20200327
+source:         ARIN
+
+route:          208.80.154.0/23
+descr:          Wikimedia eqiad
+origin:         AS14907
+mnt-by:         MNT-WIKIM
+changed:        ayounsi@wikimedia.org 20200327
+source:         ARIN
+
+route6:         2620:0:860::/48
+descr:          Wikimedia codfw
+origin:         AS14907
+mnt-by:         MNT-WIKIM
+changed:        ayounsi@wikimedia.org 20200327
+source:         ARIN
+
+route6:         2620:0:861::/48
+descr:          Wikimedia eqiad
+origin:         AS14907
+mnt-by:         MNT-WIKIM
+changed:        ayounsi@wikimedia.org 20200327
+source:         ARIN
+
+route6:         2620:0:863::/48
+descr:          Wikimedia ulsfo
+origin:         AS14907
+mnt-by:         MNT-WIKIM
+changed:        ayounsi@wikimedia.org 20200327
+source:         ARIN
+
+route:          35.33.96.0/19
+origin:         AS237
+descr:          Merit Network Inc.
+remarks:        This object was automatically created during a customer ROA generation
+admin-c:        IN-ORG-ARIN
+tech-c:         MERIT-ARIN
+mnt-by:         MNT-MICH-Z
+created:        2023-08-08T14:14:32Z
+last-modified:  2024-02-08T13:02:53Z
+source:         ARIN
+
+route:          35.34.48.0/20
+origin:         AS27274
+descr:          Merit Network Inc.
+remarks:        This object was automatically created during a customer ROA generation
+admin-c:        IN-ORG-ARIN
+tech-c:         MERIT-ARIN
+mnt-by:         MNT-MICH-Z
+created:        2023-08-08T14:13:23Z
+last-modified:  2024-02-08T13:02:53Z
+source:         ARIN
+
+route:          35.34.64.0/20
+origin:         AS27274
+descr:          Merit Network Inc.
+remarks:        This object was automatically created during a customer ROA generation
+admin-c:        IN-ORG-ARIN
+tech-c:         MERIT-ARIN
+mnt-by:         MNT-MICH-Z
+created:        2023-08-08T14:13:23Z
+last-modified:  2024-02-08T13:02:53Z
+source:         ARIN

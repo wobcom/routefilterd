@@ -40,7 +40,7 @@ impl AsSet {
 
 #[derive(Debug, Clone)]
 pub struct AsRoutes {
-    prefixes: Vec<String>,
+    pub(crate) prefixes: Vec<String>,
 }
 
 impl Default for DataStore {
