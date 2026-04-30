@@ -21,10 +21,21 @@ async fn import_buf_in_store(
         .unwrap();
 }
 
-pub async fn import_file_in_store(store: &Arc<DataStore>, relpath: &str, source_name: &str) {
+pub async fn import_file_in_store(
+    store: &Arc<DataStore>,
+    relpath: &str,
+    source_name: &str,
+    ds_priority: i64,
+) {
     let wd = Path::new(file!()).parent().unwrap();
     let path = wd.join(relpath);
     let buf = get_async_buf_read_for_file(&path).await;
 
+    store.new_data_source(String::from(source_name), 0, ds_priority); // TODO: should be refactored?
     import_buf_in_store(source_name, store.clone(), buf).await;
+}
+
+pub fn sorted_vec<T: Ord>(mut vec: Vec<T>) -> Vec<T> {
+    vec.sort();
+    vec
 }
