@@ -1,0 +1,15 @@
+as-set: AS-TELEMEDIA
+members:        AS16625,AS132091,AS17810,AS132075,AS45284,AS-DATACON-IN,AS55353:AS-RPNET-RACKBANK-GIGABITPORT
+descr:          AS-SET for Telemedia
+country:        IN
+remarks:        #############################################
+remarks:        Send Network Abuse and Spam complaints to
+remarks:        ********
+remarks:        #############################################
+tech-c:         NS282-AP
+admin-c:        NS282-AP
+mnt-by:         MAINT-IN-TELEMEDIA
+last-modified:  2017-08-28T06:04:24Z
+source:         APNIC
+
+# load bearing last comment, FIXME
