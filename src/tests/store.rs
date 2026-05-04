@@ -105,3 +105,53 @@ async fn test_as_set_overlapping_datasources() {
         util::sorted_vec(Vec::from(TELEMEDIA_AS_SETS))
     );
 }
+
+#[tokio::test]
+async fn test_as_set_overlapping_datasources_w_exclude() {
+    let telemedia_as_set = String::from(TELEMEDIA_AS_SET);
+
+    let store = fixtures::get_new_store();
+
+    // redundant definition, radb also has another telemedia
+    util::import_file_in_store(&store, "data/radb_small.db", "radb", 200).await;
+    util::import_file_in_store(&store, "data/apnic_small.db", "apnic", 100).await;
+
+    let query_result = store
+        .query_as_set(vec![], telemedia_as_set.clone(), &[String::from("radb")])
+        .expect("query did not sent back any result");
+
+    assert_eq!(
+        util::sorted_vec(query_result.asns),
+        util::sorted_vec(Vec::from(TELEMEDIA_ASNS))
+    );
+
+    assert_eq!(
+        util::sorted_vec(query_result.as_sets),
+        util::sorted_vec(Vec::from(TELEMEDIA_AS_SETS))
+    );
+}
+
+#[tokio::test]
+async fn test_as_set_overlapping_datasources_w_include() {
+    let telemedia_as_set = String::from(TELEMEDIA_AS_SET);
+
+    let store = fixtures::get_new_store();
+
+    // redundant definition, radb also has another telemedia
+    util::import_file_in_store(&store, "data/radb_small.db", "radb", 200).await;
+    util::import_file_in_store(&store, "data/apnic_small.db", "apnic", 100).await;
+
+    let query_result = store
+        .query_as_set(vec![String::from("apnic")], telemedia_as_set.clone(), &[])
+        .expect("query did not sent back any result");
+
+    assert_eq!(
+        util::sorted_vec(query_result.asns),
+        util::sorted_vec(Vec::from(TELEMEDIA_ASNS))
+    );
+
+    assert_eq!(
+        util::sorted_vec(query_result.as_sets),
+        util::sorted_vec(Vec::from(TELEMEDIA_AS_SETS))
+    );
+}
