@@ -31,3 +31,13 @@ priority = 500
 import_sources = ["data/arin.db"]
 priority = 400
 ```
+
+## Authors
+- Fiona Weber
+- Lou Lecrivain
+
+## License
+See LICENSE
+
+## Contact
+You can contact the team behind this project by emailing: wan@wobcom.de
