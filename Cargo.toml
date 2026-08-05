@@ -15,7 +15,7 @@ http-cache-reqwest = { version = "0.16", features = ["manager-cacache"] }
 log = "0.4.28"
 regex = "1.11.2"
 reqwest = { version = "0.13.1", features = ["stream"] }
-reqwest-middleware = { git = "https://github.com/wobcom/reqwest-middleware.git", features = [ "stream" ] }
+reqwest-middleware = { git = "https://github.com/wobcom/reqwest-middleware.git", features = [ "stream", "rustls-tls" ] }
 rpsl-rs = "2.0.1"
 serde = { version = "1.0.226", features = ["derive"] }
 serde_json = "1.0.145"
