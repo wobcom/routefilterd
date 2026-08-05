@@ -56,7 +56,7 @@ pub fn parse_rpsl(
 pub async fn import_source(store: &Arc<DataStore>, name: &str, url: String, _cache_dir: String) {
     let loader = CommonLoader::new(reqwest::Client::new());
 
-    info!("Importing {}", &url);
+    info!("Importing {}", url);
     store
         .import_objects(
             name,
@@ -69,5 +69,5 @@ pub async fn import_source(store: &Arc<DataStore>, name: &str, url: String, _cac
         )
         .await
         .unwrap();
-    info!("Done importing {}", &url);
+    info!("Done importing {}", url);
 }

@@ -119,7 +119,7 @@ async fn assert_load_from_http_url_with(response_template: ResponseTemplate, fil
         .await;
 
     let mut url = Url::parse(&mock_server.uri())
-        .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", &mock_server.uri()));
+        .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", mock_server.uri()));
     url.set_path(file_path);
 
     let reqwest_client = reqwest::Client::new();
