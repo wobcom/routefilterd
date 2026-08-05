@@ -40,7 +40,7 @@ impl AsSet {
 
 #[derive(Debug, Clone)]
 pub struct AsRoutes {
-    prefixes: Vec<String>,
+    pub(crate) prefixes: Vec<String>,
 }
 
 impl Default for DataStore {
@@ -85,11 +85,16 @@ impl DataStore {
         self: &Arc<Self>,
         data_source: &str,
         mut objects: impl Stream<Item = std::io::Result<String>> + Unpin,
-    ) -> std::io::Result<()> {
-        while let Some(object) = objects.next().await.transpose()? {
+    ) -> Result<(), String> {
+        while let Some(object) = objects
+            .next()
+            .await
+            .transpose()
+            .map_err(|e| e.to_string())?
+        {
             let arc_cloned = self.clone();
             let source_cloned = data_source.to_owned();
-            let _ = arc_cloned.import_object(source_cloned, object);
+            arc_cloned.import_object(source_cloned, object)?;
         }
         Ok(())
     }
