@@ -150,6 +150,7 @@ remarks:        * data has been removed from this object.
 remarks:        * To view the original object, please query the RIPE Database at:
 remarks:        * http://www.ripe.net/whois
 remarks:        ****************************
+
 "
         ))
     )

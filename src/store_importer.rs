@@ -42,6 +42,9 @@ pub fn parse_rpsl(
         }
 
         if !object_buf.is_empty() {
+            // Additional new line is part of the format, so we have to readd it for the last element, otherwise the last element would not parse.
+            object_buf.push('\n');
+
             // Yield last object
             yield std::mem::replace(&mut object_buf, String::with_capacity(8192));
         }
