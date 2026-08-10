@@ -1,3 +1,4 @@
+use crate::common_loader::LoadFromURLError::FTPError;
 use async_compression::tokio::bufread::GzipDecoder;
 use file_type::FileType;
 use futures_util::StreamExt;
@@ -5,6 +6,8 @@ use futures_util::TryStreamExt;
 use reqwest::{Error, StatusCode, Url};
 use std::path::Path;
 use std::pin::Pin;
+use suppaftp::FtpError;
+use suppaftp::tokio::AsyncFtpStream;
 use tokio::fs::File;
 use tokio::io::AsyncBufRead;
 use tokio::io::BufReader;
@@ -69,6 +72,10 @@ pub enum LoadFromURLError {
     FileLoad(LoadFromFileError),
     #[error("Invalid file url")]
     InvalidFileUrl,
+    #[error("{0}")]
+    FTPError(FtpError),
+    #[error("No Host in URL")]
+    NoHost,
 }
 
 pub trait LoadFromURL<T> {
@@ -83,6 +90,37 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
         // for 1st implem just ditch cache, and make request sync.
         // can be reimplemented better afterwards with http-cache middleware crate
         match url.scheme() {
+            "ftp" => match url.host_str() {
+                None => Err(LoadFromURLError::NoHost),
+                Some(host_str) => {
+                    let mut ftp_client = AsyncFtpStream::connect(format!("{}:21", host_str))
+                        .await
+                        .map_err(FTPError)?;
+                    ftp_client.login("anonymous", "").await.map_err(FTPError)?;
+
+                    let data_stream = ftp_client
+                        .retr_as_stream(url.path())
+                        .await
+                        .map_err(FTPError)?;
+
+                    let mut mime_buffer: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+
+                    let raw_tcpstream = data_stream.into_tcp_stream();
+
+                    if let Ok(first_bytes) = raw_tcpstream.peek(&mut mime_buffer).await
+                        && first_bytes == 4
+                        && FileType::from_bytes(mime_buffer)
+                            .media_types()
+                            .contains(&supported_mime_types::APPLICATION_GZIP)
+                    {
+                        let reader = BufReader::new(raw_tcpstream);
+                        let decompressed = GzipDecoder::new(reader);
+                        Ok(Box::pin(BufReader::new(decompressed)))
+                    } else {
+                        Ok(Box::pin(BufReader::new(raw_tcpstream)))
+                    }
+                }
+            },
             "http" | "https" => {
                 let response = self
                     .http_client
