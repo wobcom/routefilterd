@@ -32,16 +32,22 @@ pub fn parse_rpsl(
                 // Ignore comments and empty lines
                 continue;
             }
-            object_buf.push_str(&line);
-            object_buf.push('\n');
 
+            if !line.is_empty() {
+                object_buf.push_str(&line);
+                object_buf.push('\n');
+            }
             if line.is_empty() && !object_buf.is_empty() {
                 obj_num += 1;
+                object_buf.push('\n');
                 yield std::mem::replace(&mut object_buf, String::with_capacity(8192));
             }
         }
 
         if !object_buf.is_empty() {
+            // Additional new line is part of the format, so we have to readd it for the last element, otherwise the last element would not parse.
+            object_buf.push('\n');
+
             // Yield last object
             yield std::mem::replace(&mut object_buf, String::with_capacity(8192));
         }

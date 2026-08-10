@@ -156,7 +156,7 @@ impl DataStore {
     pub fn import_object(&self, data_source: String, object_buf: String) -> Result<(), String> {
         let parsed = parse_object(&object_buf);
         if let Err(_err) = parsed {
-            return Err(format!("Error parsing obj: {:?}", object_buf));
+            return Err(format!("Error parsing obj: {:?}, {:?}", object_buf, _err));
         }
         let result = parsed.unwrap();
         let obj_type = result[0].name.to_string();
