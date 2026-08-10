@@ -73,16 +73,6 @@ remarks:        ****************************
     ));
     let mut parser = std::pin::pin!(parser);
 
-    // TODO fix implementation, should not yield newlines, only objects
-    assert_eq!(
-        parser.next().await.transpose().unwrap(),
-        Some(String::from("\n"))
-    );
-    assert_eq!(
-        parser.next().await.transpose().unwrap(),
-        Some(String::from("\n"))
-    );
-
     assert_eq!(
         parser.next().await.transpose().unwrap(),
         Some(String::from(
