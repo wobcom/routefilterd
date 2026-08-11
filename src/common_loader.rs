@@ -93,7 +93,8 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
             "ftp" => match url.host_str() {
                 None => Err(LoadFromURLError::NoHost),
                 Some(host_str) => {
-                    let mut ftp_client = AsyncFtpStream::connect(format!("{}:21", host_str))
+                    let port = *url.port_or_known_default().get_or_insert(21);
+                    let mut ftp_client = AsyncFtpStream::connect((String::from(host_str), port))
                         .await
                         .map_err(FTPError)?;
                     ftp_client.login("anonymous", "").await.map_err(FTPError)?;
