@@ -60,7 +60,7 @@ pub fn parse_rpsl(
 }
 
 pub async fn import_source(store: &Arc<DataStore>, name: &str, url: String, _cache_dir: String) {
-    let loader = CommonLoader::new(reqwest::Client::new());
+    let mut loader = CommonLoader::new(reqwest::Client::new());
 
     info!("Importing {}", url);
     store

@@ -4,6 +4,7 @@ use file_type::FileType;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use reqwest::{Error, StatusCode, Url};
+use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
 use suppaftp::FtpError;
@@ -15,6 +16,8 @@ use tokio_util::io::StreamReader;
 
 pub struct CommonLoader {
     http_client: reqwest::Client,
+    //                    host   port
+    ftp_clients: HashMap<(String, u16), AsyncFtpStream>,
 }
 
 mod supported_mime_types {
@@ -23,7 +26,10 @@ mod supported_mime_types {
 
 impl CommonLoader {
     pub fn new(http_client: reqwest::Client) -> Self {
-        Self { http_client }
+        Self {
+            http_client,
+            ftp_clients: HashMap::new(),
+        }
     }
 }
 
@@ -79,12 +85,12 @@ pub enum LoadFromURLError {
 }
 
 pub trait LoadFromURL<T> {
-    async fn load_from_url(&self, url: &Url) -> Result<T, LoadFromURLError>; // method as its stateful
+    async fn load_from_url(&mut self, url: &Url) -> Result<T, LoadFromURLError>; // method as its stateful
 }
 
 impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
     async fn load_from_url(
-        &self,
+        &mut self,
         url: &Url,
     ) -> Result<Pin<Box<dyn AsyncBufRead + Send>>, LoadFromURLError> {
         // for 1st implem just ditch cache, and make request sync.
@@ -93,13 +99,24 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
             "ftp" => match url.host_str() {
                 None => Err(LoadFromURLError::NoHost),
                 Some(host_str) => {
-                    let port = *url.port_or_known_default().get_or_insert(21);
-                    let mut ftp_client = AsyncFtpStream::connect((String::from(host_str), port))
+                    let addr = (
+                        String::from(host_str),
+                        *url.port_or_known_default().get_or_insert(21),
+                    );
+                    let ftp_client = AsyncFtpStream::connect(&addr).await.map_err(FTPError)?;
+                    self.ftp_clients.insert(addr.clone(), ftp_client);
+
+                    self.ftp_clients
+                        .get_mut(&addr)
+                        .unwrap()
+                        .login("anonymous", "")
                         .await
                         .map_err(FTPError)?;
-                    ftp_client.login("anonymous", "").await.map_err(FTPError)?;
 
-                    let data_stream = ftp_client
+                    let data_stream = self
+                        .ftp_clients
+                        .get_mut(&addr)
+                        .unwrap()
                         .retr_as_stream(url.path())
                         .await
                         .map_err(FTPError)?;
