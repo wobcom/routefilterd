@@ -83,6 +83,8 @@ pub enum LoadFromURLError {
     FTPError(FtpError),
     #[error("No Host in URL")]
     NoHost,
+    #[error("Unmappable address {0}:{1}")]
+    NoAddrMapping(String, u16),
 }
 
 pub trait LoadFromURL<T> {
@@ -90,8 +92,13 @@ pub trait LoadFromURL<T> {
 }
 
 impl CommonLoader {
-    fn get_ftp_client(&mut self, addr: &(String, u16)) -> &mut AsyncFtpStream {
-        self.ftp_clients.get_mut(addr).unwrap()
+    fn get_ftp_client_mut_ref(
+        &mut self,
+        addr: &(String, u16),
+    ) -> Result<&mut AsyncFtpStream, LoadFromURLError> {
+        self.ftp_clients
+            .get_mut(addr)
+            .ok_or_else(|| LoadFromURLError::NoAddrMapping(addr.0.clone(), addr.1))
     }
 }
 
@@ -113,18 +120,18 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     let ftp_client = AsyncFtpStream::connect(&addr).await.map_err(FTPError)?;
                     self.ftp_clients.insert(addr.clone(), ftp_client);
 
-                    self.get_ftp_client(&addr)
+                    self.get_ftp_client_mut_ref(&addr)?
                         .login("anonymous", "")
                         .await
                         .map_err(FTPError)?;
 
-                    self.get_ftp_client(&addr)
+                    self.get_ftp_client_mut_ref(&addr)?
                         .transfer_type(FtpFileType::Binary)
                         .await
                         .map_err(FTPError)?;
 
                     let data_stream = self
-                        .get_ftp_client(&addr)
+                        .get_ftp_client_mut_ref(&addr)?
                         .retr_as_stream(url.path())
                         .await
                         .map_err(FTPError)?;
