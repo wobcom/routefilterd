@@ -9,6 +9,7 @@ use std::path::Path;
 use std::pin::Pin;
 use suppaftp::FtpError;
 use suppaftp::tokio::AsyncFtpStream;
+use suppaftp::types::FileType as FtpFileType;
 use tokio::fs::File;
 use tokio::io::AsyncBufRead;
 use tokio::io::BufReader;
@@ -88,6 +89,12 @@ pub trait LoadFromURL<T> {
     async fn load_from_url(&mut self, url: &Url) -> Result<T, LoadFromURLError>; // method as its stateful
 }
 
+impl CommonLoader {
+    fn get_ftp_client(&mut self, addr: &(String, u16)) -> &mut AsyncFtpStream {
+        self.ftp_clients.get_mut(addr).unwrap()
+    }
+}
+
 impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
     async fn load_from_url(
         &mut self,
@@ -106,27 +113,27 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     let ftp_client = AsyncFtpStream::connect(&addr).await.map_err(FTPError)?;
                     self.ftp_clients.insert(addr.clone(), ftp_client);
 
-                    self.ftp_clients
-                        .get_mut(&addr)
-                        .unwrap()
+                    self.get_ftp_client(&addr)
                         .login("anonymous", "")
                         .await
                         .map_err(FTPError)?;
 
+                    self.get_ftp_client(&addr)
+                        .transfer_type(FtpFileType::Binary)
+                        .await
+                        .map_err(FTPError)?;
+
                     let data_stream = self
-                        .ftp_clients
-                        .get_mut(&addr)
-                        .unwrap()
+                        .get_ftp_client(&addr)
                         .retr_as_stream(url.path())
                         .await
                         .map_err(FTPError)?;
 
-                    let mut mime_buffer: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
-
+                    let mut mime_buffer: [u8; _] = [0; 8192];
                     let raw_tcpstream = data_stream.into_tcp_stream();
 
                     if let Ok(first_bytes) = raw_tcpstream.peek(&mut mime_buffer).await
-                        && first_bytes == 4
+                        && first_bytes == 8192
                         && FileType::from_bytes(mime_buffer)
                             .media_types()
                             .contains(&supported_mime_types::APPLICATION_GZIP)
