@@ -11,8 +11,8 @@ use suppaftp::FtpError;
 use suppaftp::tokio::AsyncFtpStream;
 use suppaftp::types::FileType as FtpFileType;
 use tokio::fs::File;
-use tokio::io::AsyncBufRead;
 use tokio::io::BufReader;
+use tokio::io::{AsyncBufRead, AsyncRead};
 use tokio_util::io::StreamReader;
 
 pub struct CommonLoader {
@@ -31,6 +31,33 @@ impl CommonLoader {
             http_client,
             ftp_clients: HashMap::new(),
         }
+    }
+
+    fn get_ftp_client_mut_ref(
+        &mut self,
+        addr: &(String, u16),
+    ) -> Result<&mut AsyncFtpStream, LoadFromURLError> {
+        self.ftp_clients
+            .get_mut(addr)
+            .ok_or_else(|| LoadFromURLError::NoAddrMapping(addr.0.clone(), addr.1))
+    }
+
+    fn matching_decompressor_or_direct_stream(
+        file_types: Option<&[&str]>,
+        stream: Box<dyn AsyncRead + Send + Unpin>,
+    ) -> Box<dyn AsyncBufRead + Send + Unpin> {
+        if let Some(file_types) = file_types {
+            for file_type in file_types {
+                #[allow(clippy::single_match)] // will be extended later
+                match *file_type {
+                    supported_mime_types::APPLICATION_GZIP => {
+                        return Box::new(BufReader::new(GzipDecoder::new(BufReader::new(stream))));
+                    }
+                    _ => {}
+                };
+            }
+        }
+        Box::new(BufReader::new(stream))
     }
 }
 
@@ -91,17 +118,6 @@ pub trait LoadFromURL<T> {
     async fn load_from_url(&mut self, url: &Url) -> Result<T, LoadFromURLError>; // method as its stateful
 }
 
-impl CommonLoader {
-    fn get_ftp_client_mut_ref(
-        &mut self,
-        addr: &(String, u16),
-    ) -> Result<&mut AsyncFtpStream, LoadFromURLError> {
-        self.ftp_clients
-            .get_mut(addr)
-            .ok_or_else(|| LoadFromURLError::NoAddrMapping(addr.0.clone(), addr.1))
-    }
-}
-
 impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
     async fn load_from_url(
         &mut self,
@@ -137,20 +153,22 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                         .map_err(FTPError)?;
 
                     let mut mime_buffer: [u8; _] = [0; 8192];
-                    let raw_tcpstream = data_stream.into_tcp_stream();
+                    let raw_tcp_stream = data_stream.into_tcp_stream();
 
-                    if let Ok(first_bytes) = raw_tcpstream.peek(&mut mime_buffer).await
-                        && first_bytes == 8192
-                        && FileType::from_bytes(mime_buffer)
-                            .media_types()
-                            .contains(&supported_mime_types::APPLICATION_GZIP)
-                    {
-                        let reader = BufReader::new(raw_tcpstream);
-                        let decompressed = GzipDecoder::new(reader);
-                        Ok(Box::pin(BufReader::new(decompressed)))
-                    } else {
-                        Ok(Box::pin(BufReader::new(raw_tcpstream)))
-                    }
+                    let first_bytes = raw_tcp_stream.peek(&mut mime_buffer).await;
+                    let file_types = {
+                        if let Ok(first_bytes) = first_bytes
+                            && first_bytes == 8192
+                        {
+                            Some(FileType::from_bytes(mime_buffer).media_types())
+                        } else {
+                            None
+                        }
+                    };
+                    Ok(Box::pin(Self::matching_decompressor_or_direct_stream(
+                        file_types,
+                        Box::new(raw_tcp_stream),
+                    )))
                 }
             },
             "http" | "https" => {
@@ -169,17 +187,17 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                             .map_err(std::io::Error::other)
                             .peekable(),
                     );
-                    if let Some(Ok(first_bytes)) = stream.as_mut().peek().await
-                        && FileType::from_bytes(first_bytes)
-                            .media_types()
-                            .contains(&supported_mime_types::APPLICATION_GZIP)
-                    {
-                        let reader = StreamReader::new(stream);
-                        let decompressed = GzipDecoder::new(reader);
-                        Ok(Box::pin(BufReader::new(decompressed)))
+
+                    let first_bytes = stream.as_mut().peek().await;
+                    let file_types = if let Some(Ok(first_bytes)) = first_bytes {
+                        Some(FileType::from_bytes(first_bytes).media_types())
                     } else {
-                        Ok(Box::pin(StreamReader::new(stream)))
-                    }
+                        None
+                    };
+                    Ok(Box::pin(Self::matching_decompressor_or_direct_stream(
+                        file_types,
+                        Box::new(StreamReader::new(stream)),
+                    )))
                 } else {
                     Err(LoadFromURLError::HTTPStatus(status))
                 }
