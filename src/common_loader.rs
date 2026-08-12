@@ -25,6 +25,9 @@ mod supported_mime_types {
     pub const APPLICATION_GZIP: &str = "application/gzip";
 }
 
+const MIME_BUFFER_SIZE: usize = 8192;
+const FTP_CMD_DEFAULT_PORT: u16 = 21;
+
 impl CommonLoader {
     pub fn new(http_client: reqwest::Client) -> Self {
         Self {
@@ -131,7 +134,8 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                 Some(host_str) => {
                     let addr = (
                         String::from(host_str),
-                        *url.port_or_known_default().get_or_insert(21),
+                        *url.port_or_known_default()
+                            .get_or_insert(FTP_CMD_DEFAULT_PORT),
                     );
                     let ftp_client = AsyncFtpStream::connect(&addr).await.map_err(FTPError)?;
                     self.ftp_clients.insert(addr.clone(), ftp_client);
@@ -152,13 +156,13 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                         .await
                         .map_err(FTPError)?;
 
-                    let mut mime_buffer: [u8; _] = [0; 8192];
+                    let mut mime_buffer: [u8; _] = [0x00; MIME_BUFFER_SIZE];
                     let raw_tcp_stream = data_stream.into_tcp_stream();
 
                     let first_bytes = raw_tcp_stream.peek(&mut mime_buffer).await;
                     let file_types = {
                         if let Ok(first_bytes) = first_bytes
-                            && first_bytes == 8192
+                            && first_bytes == MIME_BUFFER_SIZE
                         {
                             Some(FileType::from_bytes(mime_buffer).media_types())
                         } else {
