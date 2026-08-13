@@ -1,4 +1,5 @@
 use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromFileError, LoadFromURL};
+use crate::tests::fixtures::get_new_client_with_middleware;
 use flate2::Compression;
 use flate2::bufread::GzEncoder;
 use reqwest::Url;
@@ -86,7 +87,7 @@ async fn test_load_from_unknown_suffix() {
 #[tokio::test]
 #[should_panic]
 async fn test_unknown_scheme_fail() {
-    let reqwest_client = reqwest::Client::new();
+    let reqwest_client = get_new_client_with_middleware();
     let loader = CommonLoader::new(reqwest_client);
     // per https://www.iana.org/assignments/uri-schemes/uri-schemes.xhtml
     let url = Url::parse("gopher://example.com/trusted.db.gz").unwrap();
@@ -96,7 +97,7 @@ async fn test_unknown_scheme_fail() {
 
 #[tokio::test]
 async fn test_load_from_file_url() {
-    let reqwest_client = reqwest::Client::new();
+    let reqwest_client = get_new_client_with_middleware();
     let loader = CommonLoader::new(reqwest_client);
     let mut temp = Builder::new()
         .suffix(".db")
@@ -122,7 +123,7 @@ async fn assert_load_from_http_url_with(response_template: ResponseTemplate, fil
         .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", mock_server.uri()));
     url.set_path(file_path);
 
-    let reqwest_client = reqwest::Client::new();
+    let reqwest_client = get_new_client_with_middleware();
     let loader = CommonLoader::new(reqwest_client);
 
     let res = loader

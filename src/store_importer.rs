@@ -1,8 +1,11 @@
 use crate::common_loader::{CommonLoader, LoadFromURL};
 use crate::store::DataStore;
 use futures_util::Stream;
+use http_cache_stream_reqwest::Cache;
+use http_cache_stream_reqwest::storage::DefaultCacheStorage;
 use log::{info, trace};
-use reqwest::Url;
+use reqwest::{Client, Url};
+use reqwest_middleware::ClientBuilder;
 use std::sync::Arc;
 use tokio::io::AsyncBufRead;
 use tokio::io::AsyncBufReadExt;
@@ -60,7 +63,11 @@ pub fn parse_rpsl(
 }
 
 pub async fn import_source(store: &Arc<DataStore>, name: &str, url: String, _cache_dir: String) {
-    let loader = CommonLoader::new(reqwest::Client::new());
+    let client = ClientBuilder::new(Client::new())
+        .with(Cache::new(DefaultCacheStorage::new("./cache")))
+        .build();
+
+    let loader = CommonLoader::new(client);
 
     info!("Importing {}", url);
     store
