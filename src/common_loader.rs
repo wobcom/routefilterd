@@ -2,7 +2,9 @@ use async_compression::tokio::bufread::GzipDecoder;
 use file_type::FileType;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
-use reqwest::{Error, StatusCode, Url};
+use reqwest::{StatusCode, Url};
+use reqwest_middleware::ClientWithMiddleware;
+use reqwest_middleware::Error;
 use std::path::Path;
 use std::pin::Pin;
 use tokio::fs::File;
@@ -11,7 +13,7 @@ use tokio::io::BufReader;
 use tokio_util::io::StreamReader;
 
 pub struct CommonLoader {
-    http_client: reqwest::Client,
+    http_client: ClientWithMiddleware,
 }
 
 mod supported_mime_types {
@@ -19,7 +21,7 @@ mod supported_mime_types {
 }
 
 impl CommonLoader {
-    pub fn new(http_client: reqwest::Client) -> Self {
+    pub fn new(http_client: ClientWithMiddleware) -> Self {
         Self { http_client }
     }
 }
