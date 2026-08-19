@@ -162,7 +162,8 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     let first_bytes = raw_tcp_stream.peek(&mut mime_buffer).await;
                     let file_types = {
                         if let Ok(first_bytes) = first_bytes
-                            && first_bytes == MIME_BUFFER_SIZE
+                            && first_bytes <= MIME_BUFFER_SIZE
+                            && first_bytes > 0
                         {
                             Some(FileType::from_bytes(mime_buffer).media_types())
                         } else {
