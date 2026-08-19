@@ -1,12 +1,18 @@
 use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromFileError, LoadFromURL};
+use crate::tests::fixtures::get_new_stoppable_ftp_server_with_fs_path;
 use flate2::Compression;
 use flate2::bufread::GzEncoder;
+use openport::pick_random_unused_port;
 use reqwest::Url;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::pin::Pin;
+use std::time::Duration;
 use tempfile::{Builder, NamedTempFile};
 use tokio::io::AsyncBufRead;
 use tokio::io::AsyncBufReadExt;
+use tokio::sync::mpsc::channel;
+use tokio::time::sleep;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -19,7 +25,6 @@ const GZ_TEST_DATA: fn() -> Vec<u8> = || {
         .unwrap();
     compressed
 };
-
 async fn assert_lines_eq(res: Pin<Box<dyn AsyncBufRead + Send>>) {
     let mut split_loader = res.lines();
     let split_data = TEST_DATA.split("\n");
@@ -165,4 +170,52 @@ async fn test_load_from_http_url_wrong_data() {
 #[should_panic]
 async fn test_load_from_http_403() {
     assert_load_from_http_url_with(ResponseTemplate::new(403), "/test.db").await;
+}
+
+async fn assert_load_from_ftp_url_with(content: Vec<u8>) {
+    let free_tcp_port = pick_random_unused_port().unwrap();
+    let mock_server_bind = format!("127.0.0.1:{}", free_tcp_port);
+    let mock_server_uri = format!("ftp://{}/", mock_server_bind);
+
+    let mut temp = NamedTempFile::new().unwrap();
+    temp.write_all(&content).unwrap();
+    let file_name: &str = temp.path().file_name().unwrap().to_str().unwrap();
+
+    let (send, recv) = channel(1);
+    let ftp_server = get_new_stoppable_ftp_server_with_fs_path(
+        PathBuf::from(temp.path().parent().unwrap()),
+        recv,
+    );
+
+    let mut url = Url::parse(&mock_server_uri)
+        .unwrap_or_else(|_| panic!("failed parsing mock ftp server uri {}", mock_server_uri));
+    url.set_path(file_name);
+
+    let reqwest_client = reqwest::Client::new();
+    let mut loader = CommonLoader::new(reqwest_client);
+
+    let handle = tokio::task::spawn(ftp_server.listen(mock_server_bind));
+
+    // stupid hack to await for FTP server thread to be ready and start serving requests
+    sleep(Duration::from_millis(10)).await;
+
+    let res = loader
+        .load_from_url(&url)
+        .await
+        .expect("failed loading response from mock ftp server");
+
+    assert_lines_eq(res).await;
+
+    send.send(()).await.unwrap(); // send ftp server thread shutdown message
+    let _ = handle.await.unwrap(); // join ftp server thread
+}
+
+#[tokio::test]
+async fn test_load_from_ftp_url() {
+    assert_load_from_ftp_url_with(Vec::from(TEST_DATA.as_bytes())).await;
+}
+
+#[tokio::test]
+async fn test_load_gz_from_ftp_url() {
+    assert_load_from_ftp_url_with(GZ_TEST_DATA()).await;
 }
