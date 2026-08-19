@@ -1,26 +1,66 @@
+use crate::common_loader::LoadFromURLError::FTPError;
 use async_compression::tokio::bufread::GzipDecoder;
 use file_type::FileType;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use reqwest::{Error, StatusCode, Url};
+use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
+use suppaftp::FtpError;
+use suppaftp::tokio::AsyncFtpStream;
+use suppaftp::types::FileType as FtpFileType;
 use tokio::fs::File;
-use tokio::io::AsyncBufRead;
 use tokio::io::BufReader;
+use tokio::io::{AsyncBufRead, AsyncRead};
 use tokio_util::io::StreamReader;
 
 pub struct CommonLoader {
     http_client: reqwest::Client,
+    //                    host   port
+    ftp_clients: HashMap<(String, u16), AsyncFtpStream>,
 }
 
 mod supported_mime_types {
     pub const APPLICATION_GZIP: &str = "application/gzip";
 }
 
+const MIME_BUFFER_SIZE: usize = 8192;
+const FTP_CMD_DEFAULT_PORT: u16 = 21;
+
 impl CommonLoader {
     pub fn new(http_client: reqwest::Client) -> Self {
-        Self { http_client }
+        Self {
+            http_client,
+            ftp_clients: HashMap::new(),
+        }
+    }
+
+    fn get_ftp_client_mut_ref(
+        &mut self,
+        addr: &(String, u16),
+    ) -> Result<&mut AsyncFtpStream, LoadFromURLError> {
+        self.ftp_clients
+            .get_mut(addr)
+            .ok_or_else(|| LoadFromURLError::NoAddrMapping(addr.0.clone(), addr.1))
+    }
+
+    fn matching_decompressor_or_direct_stream(
+        file_types: Option<&[&str]>,
+        stream: Box<dyn AsyncRead + Send + Unpin>,
+    ) -> Box<dyn AsyncBufRead + Send + Unpin> {
+        if let Some(file_types) = file_types {
+            for file_type in file_types {
+                #[allow(clippy::single_match)] // will be extended later
+                match *file_type {
+                    supported_mime_types::APPLICATION_GZIP => {
+                        return Box::new(BufReader::new(GzipDecoder::new(BufReader::new(stream))));
+                    }
+                    _ => {}
+                };
+            }
+        }
+        Box::new(BufReader::new(stream))
     }
 }
 
@@ -69,20 +109,72 @@ pub enum LoadFromURLError {
     FileLoad(LoadFromFileError),
     #[error("Invalid file url")]
     InvalidFileUrl,
+    #[error("{0}")]
+    FTPError(FtpError),
+    #[error("No Host in URL")]
+    NoHost,
+    #[error("Unmappable address {0}:{1}")]
+    NoAddrMapping(String, u16),
 }
 
 pub trait LoadFromURL<T> {
-    async fn load_from_url(&self, url: &Url) -> Result<T, LoadFromURLError>; // method as its stateful
+    async fn load_from_url(&mut self, url: &Url) -> Result<T, LoadFromURLError>; // method as its stateful
 }
 
 impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
     async fn load_from_url(
-        &self,
+        &mut self,
         url: &Url,
     ) -> Result<Pin<Box<dyn AsyncBufRead + Send>>, LoadFromURLError> {
         // for 1st implem just ditch cache, and make request sync.
         // can be reimplemented better afterwards with http-cache middleware crate
         match url.scheme() {
+            "ftp" => match url.host_str() {
+                None => Err(LoadFromURLError::NoHost),
+                Some(host_str) => {
+                    let addr = (
+                        String::from(host_str),
+                        *url.port_or_known_default()
+                            .get_or_insert(FTP_CMD_DEFAULT_PORT),
+                    );
+                    let ftp_client = AsyncFtpStream::connect(&addr).await.map_err(FTPError)?;
+                    self.ftp_clients.insert(addr.clone(), ftp_client);
+
+                    self.get_ftp_client_mut_ref(&addr)?
+                        .login("anonymous", "")
+                        .await
+                        .map_err(FTPError)?;
+
+                    self.get_ftp_client_mut_ref(&addr)?
+                        .transfer_type(FtpFileType::Binary)
+                        .await
+                        .map_err(FTPError)?;
+
+                    let data_stream = self
+                        .get_ftp_client_mut_ref(&addr)?
+                        .retr_as_stream(url.path())
+                        .await
+                        .map_err(FTPError)?;
+
+                    let mut mime_buffer: [u8; _] = [0x00; MIME_BUFFER_SIZE];
+                    let raw_tcp_stream = data_stream.into_tcp_stream();
+
+                    let first_bytes = raw_tcp_stream.peek(&mut mime_buffer).await;
+                    let file_types = {
+                        if let Ok(first_bytes) = first_bytes
+                            && first_bytes == MIME_BUFFER_SIZE
+                        {
+                            Some(FileType::from_bytes(mime_buffer).media_types())
+                        } else {
+                            None
+                        }
+                    };
+                    Ok(Box::pin(Self::matching_decompressor_or_direct_stream(
+                        file_types,
+                        Box::new(raw_tcp_stream),
+                    )))
+                }
+            },
             "http" | "https" => {
                 let response = self
                     .http_client
@@ -99,17 +191,17 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                             .map_err(std::io::Error::other)
                             .peekable(),
                     );
-                    if let Some(Ok(first_bytes)) = stream.as_mut().peek().await
-                        && FileType::from_bytes(first_bytes)
-                            .media_types()
-                            .contains(&supported_mime_types::APPLICATION_GZIP)
-                    {
-                        let reader = StreamReader::new(stream);
-                        let decompressed = GzipDecoder::new(reader);
-                        Ok(Box::pin(BufReader::new(decompressed)))
+
+                    let first_bytes = stream.as_mut().peek().await;
+                    let file_types = if let Some(Ok(first_bytes)) = first_bytes {
+                        Some(FileType::from_bytes(first_bytes).media_types())
                     } else {
-                        Ok(Box::pin(StreamReader::new(stream)))
-                    }
+                        None
+                    };
+                    Ok(Box::pin(Self::matching_decompressor_or_direct_stream(
+                        file_types,
+                        Box::new(StreamReader::new(stream)),
+                    )))
                 } else {
                     Err(LoadFromURLError::HTTPStatus(status))
                 }

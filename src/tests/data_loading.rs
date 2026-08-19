@@ -87,7 +87,7 @@ async fn test_load_from_unknown_suffix() {
 #[should_panic]
 async fn test_unknown_scheme_fail() {
     let reqwest_client = reqwest::Client::new();
-    let loader = CommonLoader::new(reqwest_client);
+    let mut loader = CommonLoader::new(reqwest_client);
     // per https://www.iana.org/assignments/uri-schemes/uri-schemes.xhtml
     let url = Url::parse("gopher://example.com/trusted.db.gz").unwrap();
 
@@ -97,7 +97,7 @@ async fn test_unknown_scheme_fail() {
 #[tokio::test]
 async fn test_load_from_file_url() {
     let reqwest_client = reqwest::Client::new();
-    let loader = CommonLoader::new(reqwest_client);
+    let mut loader = CommonLoader::new(reqwest_client);
     let mut temp = Builder::new()
         .suffix(".db")
         .tempfile()
@@ -123,7 +123,7 @@ async fn assert_load_from_http_url_with(response_template: ResponseTemplate, fil
     url.set_path(file_path);
 
     let reqwest_client = reqwest::Client::new();
-    let loader = CommonLoader::new(reqwest_client);
+    let mut loader = CommonLoader::new(reqwest_client);
 
     let res = loader
         .load_from_url(&url)
