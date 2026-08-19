@@ -7,12 +7,10 @@ use reqwest::Url;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::thread;
 use std::time::Duration;
 use tempfile::{Builder, NamedTempFile};
 use tokio::io::AsyncBufRead;
 use tokio::io::AsyncBufReadExt;
-use tokio::runtime::Runtime;
 use tokio::sync::mpsc::channel;
 use tokio::time::sleep;
 use wiremock::matchers::method;
@@ -196,14 +194,7 @@ async fn assert_load_from_ftp_url_with(content: Vec<u8>) {
     let reqwest_client = reqwest::Client::new();
     let mut loader = CommonLoader::new(reqwest_client);
 
-    // we need to spawn a separate thread for the FTP server, with the
-    // tokio runtime environment upon which it depends. if we would use
-    // tokio light threads, then the ftp_server would block and not allow
-    // the rest of the test code to execute.
-    let handle = thread::spawn(move || {
-        let rt = Runtime::new().unwrap();
-        rt.block_on(ftp_server.listen(mock_server_bind)).unwrap();
-    });
+    let handle = tokio::task::spawn(ftp_server.listen(mock_server_bind));
 
     // stupid hack to await for FTP server thread to be ready and start serving requests
     sleep(Duration::from_millis(10)).await;
@@ -216,7 +207,7 @@ async fn assert_load_from_ftp_url_with(content: Vec<u8>) {
     assert_lines_eq(res).await;
 
     send.send(()).await.unwrap(); // send ftp server thread shutdown message
-    handle.join().unwrap(); // join ftp server thread
+    let _ = handle.await.unwrap(); // join ftp server thread
 }
 
 #[tokio::test]
