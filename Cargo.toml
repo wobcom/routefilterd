@@ -26,6 +26,7 @@ toml = "0.9.8"
 [dev-dependencies]
 const_format = "0.2.36"
 libunftp = "0.23.0"
+openport = { version = "0.4.0", features = ["rand"] }
 stringreader = "0.1.1"
 tempfile = "3.27.0"
 unftp-core = "0.1.0"
