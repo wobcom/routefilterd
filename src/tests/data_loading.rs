@@ -2,6 +2,7 @@ use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromFileError,
 use crate::tests::fixtures::get_new_stoppable_ftp_server_with_fs_path;
 use flate2::Compression;
 use flate2::bufread::GzEncoder;
+use openport::pick_random_unused_port;
 use reqwest::Url;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -174,7 +175,8 @@ async fn test_load_from_http_403() {
 }
 
 async fn assert_load_from_ftp_url_with(content: Vec<u8>) {
-    let mock_server_bind = "127.0.0.1:2121";
+    let free_tcp_port = pick_random_unused_port().unwrap();
+    let mock_server_bind = format!("127.0.0.1:{}", free_tcp_port);
     let mock_server_uri = format!("ftp://{}/", mock_server_bind);
 
     let mut temp = NamedTempFile::new().unwrap();
@@ -218,8 +220,11 @@ async fn assert_load_from_ftp_url_with(content: Vec<u8>) {
 }
 
 #[tokio::test]
-// single function, since fetches have to be sequential to await server port start conflict
-async fn test_all_ftp_fetch() {
+async fn test_load_from_ftp_url() {
     assert_load_from_ftp_url_with(Vec::from(TEST_DATA.as_bytes())).await;
+}
+
+#[tokio::test]
+async fn test_load_gz_from_ftp_url() {
     assert_load_from_ftp_url_with(GZ_TEST_DATA()).await;
 }
