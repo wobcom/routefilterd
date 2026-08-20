@@ -48,19 +48,33 @@ impl CommonLoader {
     fn matching_decompressor_or_direct_stream(
         file_types: Option<&[&str]>,
         stream: Box<dyn AsyncRead + Send + Unpin>,
+        path: String,
     ) -> Box<dyn AsyncBufRead + Send + Unpin> {
-        if let Some(file_types) = file_types {
-            for file_type in file_types {
-                #[allow(clippy::single_match)] // will be extended later
-                match *file_type {
-                    supported_mime_types::APPLICATION_GZIP => {
-                        return Box::new(BufReader::new(GzipDecoder::new(BufReader::new(stream))));
+        let path_parts: Vec<&str> = path.split('.').collect();
+
+        match path_parts[..] {
+            [] => Box::new(BufReader::new(stream)), // root, attempt direct read
+            [.., "gz"] => Box::new(BufReader::new(GzipDecoder::new(BufReader::new(stream)))), // gz
+            [.., "db"] => Box::new(BufReader::new(stream)), // db file, direct read OK
+            [.., &_] => {
+                // unhandled extension, attempt mime type conversion
+                if let Some(file_types) = file_types {
+                    for file_type in file_types {
+                        #[allow(clippy::single_match)] // will be extended later
+                        match *file_type {
+                            supported_mime_types::APPLICATION_GZIP => {
+                                return Box::new(BufReader::new(GzipDecoder::new(BufReader::new(
+                                    stream,
+                                ))));
+                            }
+                            _ => {}
+                        };
                     }
-                    _ => {}
-                };
+                }
+                // cannot determine mime type, attempt direct read
+                Box::new(BufReader::new(stream))
             }
         }
-        Box::new(BufReader::new(stream))
     }
 }
 
@@ -68,10 +82,8 @@ impl CommonLoader {
 pub enum LoadFromFileError {
     #[error("{0}")]
     Open(std::io::Error),
-    #[error("Unsupported extension")]
-    UnsupportedExtension,
-    #[error("Non-UTF8 extension")]
-    NonUtf8Extension,
+    #[error("Non-UTF8 path")]
+    NonUtf8Path,
 }
 
 pub trait LoadFromFile<T> {
@@ -85,14 +97,13 @@ impl LoadFromFile<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
         let file = File::open(&path).await.map_err(LoadFromFileError::Open)?;
         let file = BufReader::new(file);
 
-        match path.as_ref().extension() {
-            None => Ok(Box::pin(file)), // no ext file, attempt direct read
-            Some(ext) => match ext.to_str() {
-                Some("gz") => Ok(Box::pin(BufReader::new(GzipDecoder::new(file)))),
-                Some("db") => Ok(Box::pin(file)),
-                Some(_) => Err(LoadFromFileError::UnsupportedExtension),
-                None => Err(LoadFromFileError::NonUtf8Extension),
-            },
+        match path.as_ref().to_str() {
+            Some(path_str) => Ok(Box::pin(Self::matching_decompressor_or_direct_stream(
+                None,
+                Box::new(file),
+                String::from(path_str),
+            ))),
+            None => Err(LoadFromFileError::NonUtf8Path),
         }
     }
 }
@@ -173,6 +184,7 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     Ok(Box::pin(Self::matching_decompressor_or_direct_stream(
                         file_types,
                         Box::new(raw_tcp_stream),
+                        String::from(url.path()),
                     )))
                 }
             },
@@ -202,6 +214,7 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     Ok(Box::pin(Self::matching_decompressor_or_direct_stream(
                         file_types,
                         Box::new(StreamReader::new(stream)),
+                        String::from(url.path()),
                     )))
                 } else {
                     Err(LoadFromURLError::HTTPStatus(status))

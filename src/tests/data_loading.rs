@@ -1,4 +1,4 @@
-use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromFileError, LoadFromURL};
+use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromURL};
 use crate::tests::fixtures::get_new_stoppable_ftp_server_with_fs_path;
 use flate2::Compression;
 use flate2::bufread::GzEncoder;
@@ -71,21 +71,6 @@ async fn test_load_from_gz_file() {
 
     let res = CommonLoader::load_from_file(temp.as_ref()).await.unwrap();
     assert_lines_eq(res).await;
-}
-
-#[tokio::test]
-async fn test_load_from_unknown_suffix() {
-    let temp = Builder::new()
-        .suffix(".bad")
-        .tempfile()
-        .expect("cannot create test temporary file");
-
-    let res = CommonLoader::load_from_file(temp.as_ref()).await;
-
-    match res {
-        Err(LoadFromFileError::UnsupportedExtension) => (),
-        _ => panic!("did not error out on unknown suffix"),
-    };
 }
 
 #[tokio::test]
