@@ -40,7 +40,7 @@ async fn test_load_from_raw_file() {
 
     temp.write_all(TEST_DATA.as_bytes()).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    let res = CommonLoader::load_from_file(temp.as_ref()).await.unwrap();
     assert_lines_eq(res).await;
 }
 
@@ -53,7 +53,7 @@ async fn test_load_from_db_file() {
 
     temp.write_all(TEST_DATA.as_bytes()).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    let res = CommonLoader::load_from_file(temp.as_ref()).await.unwrap();
     assert_lines_eq(res).await;
 }
 
@@ -69,7 +69,7 @@ async fn test_load_from_gz_file() {
     gz_encoder.read_to_end(&mut compressed).unwrap();
     temp.write_all(&compressed[..]).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    let res = CommonLoader::load_from_file(temp.as_ref()).await.unwrap();
     assert_lines_eq(res).await;
 }
 
@@ -80,7 +80,7 @@ async fn test_load_from_unknown_suffix() {
         .tempfile()
         .expect("cannot create test temporary file");
 
-    let res = CommonLoader::load(temp.as_ref()).await;
+    let res = CommonLoader::load_from_file(temp.as_ref()).await;
 
     match res {
         Err(LoadFromFileError::UnsupportedExtension) => (),

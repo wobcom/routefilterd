@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::io::AsyncBufRead;
 
 async fn get_async_buf_read_for_file(path: &Path) -> Pin<Box<dyn AsyncBufRead + Send>> {
-    CommonLoader::load(path).await.unwrap()
+    CommonLoader::load_from_file(path).await.unwrap()
 }
 
 async fn import_buf_in_store(

@@ -75,11 +75,11 @@ pub enum LoadFromFileError {
 }
 
 pub trait LoadFromFile<T> {
-    async fn load(path: impl AsRef<Path>) -> Result<T, LoadFromFileError>; // static as it does not need the http client
+    async fn load_from_file(path: impl AsRef<Path>) -> Result<T, LoadFromFileError>; // static as it does not need the http client
 }
 
 impl LoadFromFile<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
-    async fn load(
+    async fn load_from_file(
         path: impl AsRef<Path>,
     ) -> Result<Pin<Box<dyn AsyncBufRead + Send>>, LoadFromFileError> {
         let file = File::open(&path).await.map_err(LoadFromFileError::Open)?;
@@ -207,7 +207,7 @@ impl LoadFromURL<Pin<Box<dyn AsyncBufRead + Send>>> for CommonLoader {
                     Err(LoadFromURLError::HTTPStatus(status))
                 }
             }
-            "file" => Self::load(
+            "file" => Self::load_from_file(
                 url.to_file_path()
                     .map_err(|_| LoadFromURLError::InvalidFileUrl)?,
             )
