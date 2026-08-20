@@ -3,7 +3,9 @@ use async_compression::tokio::bufread::GzipDecoder;
 use file_type::FileType;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
+use phf_macros::phf_map;
 use reqwest::{Error, StatusCode, Url};
+use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
@@ -21,9 +23,14 @@ pub struct CommonLoader {
     ftp_clients: HashMap<(String, u16), AsyncFtpStream>,
 }
 
-mod supported_mime_types {
-    pub const APPLICATION_GZIP: &str = "application/gzip";
+#[derive(PartialEq)]
+enum CompressionType {
+    Gzip,
 }
+
+static SUPPORTED_COMPRESSIONS: phf::Map<&'static str, &CompressionType> = phf_map!(
+    "application/gzip" => &CompressionType::Gzip,
+);
 
 const MIME_BUFFER_SIZE: usize = 8192;
 const FTP_CMD_DEFAULT_PORT: u16 = 21;
@@ -45,35 +52,64 @@ impl CommonLoader {
             .ok_or_else(|| LoadFromURLError::NoAddrMapping(addr.0.clone(), addr.1))
     }
 
+    fn decompress_stream(
+        compression: &CompressionType,
+        stream: Box<dyn AsyncRead + Send + Unpin>,
+    ) -> Box<dyn AsyncBufRead + Send + Unpin> {
+        #[allow(clippy::single_match)] // will be extended later if needed
+        match compression {
+            CompressionType::Gzip => {
+                Box::new(BufReader::new(GzipDecoder::new(BufReader::new(stream))))
+            }
+        }
+    }
+
     fn matching_decompressor_or_direct_stream(
-        file_types: Option<&[&str]>,
+        mime_bytes_file_types: Option<&[&str]>,
         stream: Box<dyn AsyncRead + Send + Unpin>,
         path: String,
     ) -> Box<dyn AsyncBufRead + Send + Unpin> {
         let path_parts: Vec<&str> = path.split('.').collect();
 
-        match path_parts[..] {
-            [] => Box::new(BufReader::new(stream)), // root, attempt direct read
-            [.., "gz"] => Box::new(BufReader::new(GzipDecoder::new(BufReader::new(stream)))), // gz
-            [.., "db"] => Box::new(BufReader::new(stream)), // db file, direct read OK
-            [.., &_] => {
-                // unhandled extension, attempt mime type conversion
-                if let Some(file_types) = file_types {
-                    for file_type in file_types {
-                        #[allow(clippy::single_match)] // will be extended later
-                        match *file_type {
-                            supported_mime_types::APPLICATION_GZIP => {
-                                return Box::new(BufReader::new(GzipDecoder::new(BufReader::new(
-                                    stream,
-                                ))));
-                            }
-                            _ => {}
-                        };
-                    }
-                }
-                // cannot determine mime type, attempt direct read
-                Box::new(BufReader::new(stream))
+        let extension_file_types: Vec<&str> = match path_parts[..] {
+            [] => Vec::new(),
+            [.., extension] => FileType::from_extension(extension)
+                .to_vec()
+                .iter()
+                .flat_map(|f| f.media_types())
+                .copied()
+                .collect(),
+        }; // flatten into all matching mime types found from extension
+
+        // if any mime type was found from magic numbers, attempt to match with supported compressions
+        let mime_bytes_found_compression = if let Some(file_types) = mime_bytes_file_types {
+            file_types
+                .iter()
+                .find_map(|s| SUPPORTED_COMPRESSIONS.get(s))
+        } else {
+            None
+        };
+        // same as above, but with file extensions
+        let extension_found_compression = extension_file_types
+            .iter()
+            .find_map(|s| SUPPORTED_COMPRESSIONS.get(s));
+
+        match (extension_found_compression, mime_bytes_found_compression) {
+            // if compression either found through extension or magic numbers, decompress stream
+            (Some(compression), None) | (None, Some(compression)) => {
+                Self::decompress_stream(compression, stream)
             }
+            // if compression found at both extension and magic, see if they agree, and if not,
+            // magic bytes haves priority, as server might be misconfigured
+            (Some(extension_compression), Some(bytes_compression)) => {
+                if extension_compression == bytes_compression {
+                    Self::decompress_stream(extension_compression, stream) // either
+                } else {
+                    Self::decompress_stream(bytes_compression, stream)
+                }
+            }
+            // none found, might be uncompressed, attempt to read raw
+            (None, None) => Box::new(BufReader::new(stream)),
         }
     }
 }
