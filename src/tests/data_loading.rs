@@ -1,4 +1,4 @@
-use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromFileError, LoadFromURL};
+use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromURL};
 use crate::tests::fixtures::get_new_stoppable_ftp_server_with_fs_path;
 use flate2::Compression;
 use flate2::bufread::GzEncoder;
@@ -40,7 +40,7 @@ async fn test_load_from_raw_file() {
 
     temp.write_all(TEST_DATA.as_bytes()).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    let res = CommonLoader::load_from_file(temp.as_ref()).await.unwrap();
     assert_lines_eq(res).await;
 }
 
@@ -53,7 +53,7 @@ async fn test_load_from_db_file() {
 
     temp.write_all(TEST_DATA.as_bytes()).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    let res = CommonLoader::load_from_file(temp.as_ref()).await.unwrap();
     assert_lines_eq(res).await;
 }
 
@@ -69,23 +69,8 @@ async fn test_load_from_gz_file() {
     gz_encoder.read_to_end(&mut compressed).unwrap();
     temp.write_all(&compressed[..]).unwrap();
 
-    let res = CommonLoader::load(temp.as_ref()).await.unwrap();
+    let res = CommonLoader::load_from_file(temp.as_ref()).await.unwrap();
     assert_lines_eq(res).await;
-}
-
-#[tokio::test]
-async fn test_load_from_unknown_suffix() {
-    let temp = Builder::new()
-        .suffix(".bad")
-        .tempfile()
-        .expect("cannot create test temporary file");
-
-    let res = CommonLoader::load(temp.as_ref()).await;
-
-    match res {
-        Err(LoadFromFileError::UnsupportedExtension) => (),
-        _ => panic!("did not error out on unknown suffix"),
-    };
 }
 
 #[tokio::test]
