@@ -8,7 +8,9 @@ listen_address = "[::]:1337"
 [data_sources.RIPE]
 import_sources = ["https://ftp.ripe.net/ripe/dbase/ripe.db.gz"]
 import_serial = "https://ftp.ripe.net/ripe/dbase/RIPE.CURRENTSERIAL"
-nrtm_address = "whois.ripe.net:4444"
+nrtm_host = "whois.ripe.net"
+nrtm_port = 4444
+nrtm_streaming_supported = true
 priority = 500
 
 #[data_sources.ARIN]

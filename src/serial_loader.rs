@@ -49,7 +49,6 @@ impl SerialLoader {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
