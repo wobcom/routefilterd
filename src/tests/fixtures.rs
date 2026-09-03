@@ -7,6 +7,8 @@ use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use unftp_core::auth::UserDetail;
 use unftp_sbe_fs::Filesystem;
+use wiremock::matchers::method;
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 pub fn get_new_store() -> Arc<DataStore> {
     Arc::new(DataStore::new())
@@ -27,4 +29,15 @@ pub fn get_new_stoppable_ftp_server_with_fs_path(
         })
         .build()
         .unwrap()
+}
+
+pub async fn get_http_server_with(response_template: ResponseTemplate) -> MockServer {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .respond_with(response_template)
+        .mount(&mock_server)
+        .await;
+
+    mock_server
 }
