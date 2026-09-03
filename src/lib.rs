@@ -1,6 +1,7 @@
 pub mod api;
 mod common_loader;
 pub mod config;
+pub mod nrtm_importer;
 mod serial_loader;
 pub mod store;
 pub mod store_importer;
