@@ -1,5 +1,5 @@
 use super::super::common_loader::{CommonLoader, LoadFromFile, LoadFromURL};
-use crate::tests::fixtures::get_new_stoppable_ftp_server_with_fs_path;
+use crate::tests::fixtures::{get_http_server_with, get_new_stoppable_ftp_server_with_fs_path};
 use flate2::Compression;
 use flate2::bufread::GzEncoder;
 use openport::pick_random_unused_port;
@@ -13,8 +13,7 @@ use tokio::io::AsyncBufRead;
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc::channel;
 use tokio::time::sleep;
-use wiremock::matchers::method;
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::ResponseTemplate;
 
 const TEST_DATA: &str = "TESTDATA\nTESTADA\nTESADA";
 const WRONG_TEST_DATA: &str = "TEATATA\nTA\nTDA";
@@ -101,12 +100,7 @@ async fn test_load_from_file_url() {
 }
 
 async fn assert_load_from_http_url_with(response_template: ResponseTemplate, file_path: &str) {
-    let mock_server = MockServer::start().await;
-
-    Mock::given(method("GET"))
-        .respond_with(response_template)
-        .mount(&mock_server)
-        .await;
+    let mock_server = get_http_server_with(response_template).await;
 
     let mut url = Url::parse(&mock_server.uri())
         .unwrap_or_else(|_| panic!("failed parsing MockServer uri {}", mock_server.uri()));

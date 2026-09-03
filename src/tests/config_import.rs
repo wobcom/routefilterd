@@ -9,6 +9,8 @@ const LOG_LEVEL: &str = "debug";
 const CACHE_DIR: &str = "cache";
 const RIPE_PRIORITY: &str = "500";
 const RIPE_DB_URI: &str = "https://ftp.ripe.net/ripe/dbase/ripe.db.gz";
+const RIPE_SERIAL_URI: &str = "https://ftp.ripe.net/ripe/dbase/RIPE.CURRENTSERIAL";
+const RIPE_NRTM_HOST: &str = "whois.ripe.net:4444";
 const TEST_CORRECT_TOML: &str = formatcp!(
     r#"
 log_level = "{log_level}"
@@ -20,6 +22,8 @@ default_recursion_depth = {default_recursion_depth}
 
 [data_sources.RIPE]
 import_sources = ["{ripe_db}"]
+import_serial = "{ripe_serial}"
+nrtm_host = "{ripe_nrtm_host}"
 priority = {ripe_priority}
 "#,
     listen_address = API_LISTEN_ADDRESS,
@@ -28,6 +32,8 @@ priority = {ripe_priority}
     cache_dir = CACHE_DIR,
     ripe_priority = RIPE_PRIORITY,
     ripe_db = RIPE_DB_URI,
+    ripe_nrtm_host = RIPE_NRTM_HOST,
+    ripe_serial = RIPE_SERIAL_URI,
 );
 
 const TEST_INCORRECT_TOML: &str = r#"

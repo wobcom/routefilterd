@@ -12,6 +12,7 @@ flate2 = "1.1.5"
 futures-util = "0.3.31"
 http = "1.3.1"
 log = "0.4.28"
+nrtm-parser = { version = "0.1.0", features = ["async-streaming"] }
 phf = "0.14.0"
 phf_macros = "0.14.0"
 regex = "1.11.2"
