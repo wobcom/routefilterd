@@ -1,10 +1,15 @@
 use crate::store::DataStore;
 use libunftp::options::{ActivePassiveMode, Shutdown};
 use libunftp::{Server, ServerBuilder, options};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
+use tokio::task::JoinHandle;
 use unftp_core::auth::UserDetail;
 use unftp_sbe_fs::Filesystem;
 use wiremock::matchers::method;
@@ -40,4 +45,26 @@ pub async fn get_http_server_with(response_template: ResponseTemplate) -> MockSe
         .await;
 
     mock_server
+}
+
+pub async fn get_single_connection_tcp_server_with(
+    response_template: Vec<u8>,
+) -> (JoinHandle<()>, SocketAddr) {
+    let listener = TcpListener::bind(("localhost", 0)).await.unwrap();
+    let listening_socket_addr = listener.local_addr().unwrap();
+
+    let process_conn = async move |stream: &mut TcpStream| {
+        stream
+            .write_all(response_template.as_slice())
+            .await
+            .unwrap();
+    };
+
+    let handle = spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        process_conn(&mut stream).await;
+        // and terminate
+    });
+
+    (handle, listening_socket_addr)
 }
