@@ -24,14 +24,11 @@ fn default_recursion_depth() -> u32 {
 #[derive(Deserialize, Clone)]
 pub struct ConfigDataSources {
     pub import_sources: Vec<String>,
-    pub import_serial: Option<String>,
+    pub import_serial: String,
     pub nrtm_host: Option<String>,
     pub nrtm_port: Option<u16>,
     #[serde(default)]
     pub nrtm_streaming_supported: bool,
-    #[serde(default)]
-    pub serial: u64,
-    // TODO: Implement Serial
     #[serde(default)]
     pub priority: i64,
 }
