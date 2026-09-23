@@ -5,8 +5,8 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
@@ -53,19 +53,20 @@ pub async fn get_single_connection_tcp_server_with(
     let listener = TcpListener::bind(("localhost", 0)).await.unwrap();
     let listening_socket_addr = listener.local_addr().unwrap();
 
-    let process_conn = async move |stream: &mut TcpStream| {
+    let handle = spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+
+        // read query from client, this is to avoid the connection getting stuck
+        // and the network stack calling for a RST, thus breaking the connection
+        let mut buf = [0; "-kg RIPE:3:65887900-LAST\n".len()];
+        let _ = stream.read_exact(&mut buf).await;
+
         stream
             .write_all(response_template.as_slice())
             .await
             .unwrap();
 
         stream.shutdown().await.unwrap();
-    };
-
-    let handle = spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        process_conn(&mut stream).await;
-        // and terminate
     });
 
     (handle, listening_socket_addr)
