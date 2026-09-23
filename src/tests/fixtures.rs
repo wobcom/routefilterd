@@ -58,6 +58,8 @@ pub async fn get_single_connection_tcp_server_with(
             .write_all(response_template.as_slice())
             .await
             .unwrap();
+
+        stream.shutdown().await.unwrap();
     };
 
     let handle = spawn(async move {
