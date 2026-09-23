@@ -1,6 +1,8 @@
 use crate::store::{DataSource, DataStore};
-use futures_util::StreamExt;
-use nrtm_parser::{NRTMV3Parser, OpType, ParseError, StreamingNRTMParser, Verb};
+use futures_util::TryStreamExt;
+use nrtm_parser::streaming::NRTMStreamError;
+use nrtm_parser::{NRTMV3Parser, OpType, StreamingNRTMParser, Verb};
+use re_delimiter_codec::REDelimiterCodecError;
 use std::collections::HashMap;
 use std::sync::{Arc, MutexGuard};
 use std::time::Duration;
@@ -10,6 +12,8 @@ use tokio::{io, time};
 use tokio_util::sync::CancellationToken;
 
 type Serial = u64;
+
+const MAX_CHUNK_LEN: usize = 1024 * 1024; // 1M
 
 pub enum NRTMRefreshMode {
     SingleLongLastingConnection, // maintain continuously open connection
@@ -102,22 +106,30 @@ impl<T: ToSocketAddrs + Clone> NRTMImporter<T> {
             .await
             .map_err(NRTMImporterError::IO)?;
 
-        let mut message_reader = NRTMV3Parser::reader_from(tcp_stream);
+        let mut v3_parser = NRTMV3Parser::new(MAX_CHUNK_LEN);
+        let mut message_reader = v3_parser.stream_from(tcp_stream);
 
         loop {
-            let optional_result = message_reader.next().await;
+            let optional_result = message_reader.try_next().await;
 
             match optional_result {
-                None => return Ok(()), // end of stream, if no error encountered then all good! :)
-                Some(result) => match result {
-                    Ok(nrtm_message) => match nrtm_message.update {
-                        OpType::V2(_) => {} // no v2 support
-                        OpType::V3(verb, serial) => match verb {
-                            Verb::ADD => {
-                                // import object
-                                self.store_handle
-                                    .import_object(self.data_source_name.clone(), nrtm_message.rpsl)
-                                    .map_err(NRTMImporterError::StoreError)?;
+                Ok(None) => return Ok(()), // end of stream, if no error encountered then all good! :)
+                Ok(Some(nrtm_message)) => match nrtm_message.update {
+                    OpType::V2(_) => {} // no v2 support
+                    OpType::V3(verb, serial) => match verb {
+                        Verb::ADD => {
+                            // import object
+                            let import_ok = self
+                                .store_handle
+                                .import_object(self.data_source_name.clone(), nrtm_message.rpsl);
+
+                            if let Err(e) = import_ok {
+                                log::warn!(
+                                    "skipping update {} as store returned an error on import: {}",
+                                    serial,
+                                    e
+                                )
+                            } else {
                                 // increase serial
                                 // acquire lock
                                 let mut data_source_map = self.get_data_sources_lock()?;
@@ -132,47 +144,36 @@ impl<T: ToSocketAddrs + Clone> NRTMImporter<T> {
                                 // drop lock
                                 drop(data_source_map);
                             }
-                            Verb::DEL => {
-                                // store deletion not yet implemented
-                                // TODO implement deletion in store
-                                log::warn!(
-                                    "NRTM import DS {} asked for deletion, this is not implemented yet.",
-                                    self.data_source_name,
-                                );
-                            }
-                        },
-                    },
-                    Err(err) => match err {
-                        // intercept and continue, should not fail
-                        ParseError::NoMatch => {
-                            log::error!("NRTM import DS {} no match", self.data_source_name)
                         }
-                        ParseError::Incomplete => log::error!(
-                            "NRTM import DS {} encountered incomplete input",
-                            self.data_source_name
-                        ),
-                        ParseError::Parser(p) => log::error!(
-                            "NRTM import DS {} parser error {}",
-                            self.data_source_name,
-                            p
-                        ),
-                        ParseError::MalformedSerial(_s, e) => log::error!(
-                            "NRTM import DS {} malformed serial, err {e}",
-                            self.data_source_name,
-                        ),
-                        ParseError::LeadingGarbage(_s) => {
-                            log::error!("NRTM import DS {} leading garbage", self.data_source_name)
+                        Verb::DEL => {
+                            // store deletion not yet implemented
+                            // TODO implement deletion in store
+                            log::warn!(
+                                "NRTM import DS {} asked for deletion, this is not implemented yet.",
+                                self.data_source_name,
+                            );
                         }
-                        ParseError::IoError(ioe) => log::error!(
-                            "NRTM import DS {} I/O error while reading input, {ioe}",
-                            self.data_source_name
-                        ),
-                        ParseError::NonUTF8Input(e) => log::error!(
-                            "NRTM import DS {}, non-UTF8 input encountered, {e}",
-                            self.data_source_name
-                        ),
                     },
                 },
+                Err(NRTMStreamError::Parser(parse_e)) => {
+                    log::error!(
+                        "encountered recoverable parser error, continuing {:?}",
+                        parse_e
+                    );
+                }
+                Err(NRTMStreamError::REDelimiterCodec(
+                    REDelimiterCodecError::MaxChunkLengthExceeded,
+                )) => {
+                    log::error!(
+                        "max chunk length exceeded, one or more update(s) discarded. continuing."
+                    );
+                }
+                Err(e) => {
+                    panic!(
+                        "irrecoverable error encountered during stream processing {:?}",
+                        e
+                    );
+                }
             }
         }
     }
