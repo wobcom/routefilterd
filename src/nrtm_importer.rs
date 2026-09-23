@@ -231,7 +231,7 @@ mod tests {
         server.await.expect("server should have closed");
 
         let _ = store
-            .query_as_set(vec![ds_name], String::from("AS-VM-JE-CUS"), &[])
+            .query_as_set(vec![ds_name], String::from("AS62425:AS-KZYDC"), &[])
             .expect("as-set should be present after nrtm import");
     }
 }
