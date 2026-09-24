@@ -95,7 +95,10 @@ impl DataStore {
         {
             let arc_cloned = self.clone();
             let source_cloned = data_source.to_owned();
-            arc_cloned.import_object(source_cloned, object)?;
+            let import_res = arc_cloned.import_object(source_cloned, object);
+            if let Err(e) = import_res {
+                log::error!("{}", e)
+            }
         }
         Ok(())
     }
