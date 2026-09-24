@@ -143,14 +143,21 @@ impl<T: ToSocketAddrs + Clone> NRTMImporter<T> {
                                     .or_insert(DataSource::default()); // should not happen as its checked above
                                 // drop lock
                                 drop(data_source_map);
+                                // log
+                                log::info!(
+                                    "NRTM import DS {} ADD processed for serial {}",
+                                    self.data_source_name,
+                                    serial
+                                );
                             }
                         }
                         Verb::DEL => {
                             // store deletion not yet implemented
                             // TODO implement deletion in store
-                            log::warn!(
-                                "NRTM import DS {} asked for deletion, this is not implemented yet.",
+                            log::info!(
+                                "NRTM import DS {} DEL processed for serial {}, this is not implemented yet.",
                                 self.data_source_name,
+                                serial,
                             );
                         }
                     },
@@ -179,21 +186,20 @@ impl<T: ToSocketAddrs + Clone> NRTMImporter<T> {
     }
 
     async fn continuous_import_loop(&self) -> Result<(), NRTMImporterError> {
-        let mut interval = time::interval(self.refresh_interval);
+        let interval = &mut time::interval(self.refresh_interval);
 
         loop {
             tokio::select! {
                  // exit, connections will close by being dropped
                 _shutdown = self.cancel_token.cancelled() => break,
-                else => {
-                     // schedule
-                    interval.tick().await;
-                    // bubble up errors if any, will exit loop
+                _ = async {
                     self.single_connection_import().await?;
-                },
+                    interval.tick().await;
+                    Ok::<(),NRTMImporterError>(())
+                } => {},
             }
         }
-        Ok(()) // import called off
+        Ok(())
     }
 }
 
