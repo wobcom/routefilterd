@@ -10,6 +10,8 @@ use tokio::task;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
+const NRTM_IMPORT_INTERVAL_MIN: u64 = 10;
+
 #[tokio::main(worker_threads = 12)]
 async fn main() {
     let cancel_token = CancellationToken::new();
@@ -20,12 +22,13 @@ async fn main() {
     let config = parse_config(String::from("config.toml"));
 
     let _ = log::set_logger(&SimpleLogger).map(|()| {
-        log::set_max_level(match config.log_level.as_str() {
+        log::set_max_level(match config.log_level.as_str().trim() {
             "trace" => LevelFilter::Trace,
             "debug" => LevelFilter::Debug,
             "error" => LevelFilter::Error,
             "warn" => LevelFilter::Warn,
-            _ => LevelFilter::Info,
+            "info" => LevelFilter::Info,
+            _ => LevelFilter::Debug,
         })
     });
 
@@ -74,7 +77,7 @@ async fn main() {
                         true => NRTMRefreshMode::SingleLongLastingConnection,
                         false => NRTMRefreshMode::ScheduledMultipleConnection,
                     },
-                    Duration::from_mins(10),
+                    Duration::from_mins(NRTM_IMPORT_INTERVAL_MIN),
                     inner_cancel_token,
                 );
 
