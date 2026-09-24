@@ -1,4 +1,5 @@
 use crate::common_loader::{CommonLoader, LoadFromURL};
+use crate::serial_loader::SerialLoader;
 use crate::store::DataStore;
 use futures_util::Stream;
 use log::{info, trace};
@@ -76,4 +77,24 @@ pub async fn import_source(store: &Arc<DataStore>, name: &str, url: String, _cac
         .await
         .unwrap();
     info!("Done importing {}", url);
+}
+
+pub async fn new_datasource(
+    store: &Arc<DataStore>,
+    name: String,
+    serial_url: String,
+    priority: i64,
+) {
+    info!("Initializing datasource {}", name);
+
+    let mut loader = SerialLoader::new(CommonLoader::new(reqwest::Client::new()));
+    let url = Url::parse(serial_url.as_str()).unwrap();
+
+    info!("Importing serial from {}", url);
+
+    let serial: u64 = loader.load_serial_from(&url).await.unwrap();
+
+    info!("Serial for source {} is {}", name, serial);
+
+    store.new_data_source(name.clone(), serial, priority);
 }

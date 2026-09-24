@@ -12,15 +12,15 @@ static ASSET_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([A-Z]+::)?(AS[0-9]+[:]+)?AS-[A-Z0-9-]+$").unwrap());
 
 pub struct DataStore {
-    datasources: std::sync::Mutex<HashMap<String, DataSource>>,
+    pub datasources: std::sync::Mutex<HashMap<String, DataSource>>,
     as_sets: std::sync::Mutex<HashMap<(String, String), AsSet>>,
     as_routes: std::sync::Mutex<HashMap<(String, String), AsRoutes>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DataSource {
-    // serial: u64,
-    priority: i64,
+    pub current_serial: u64,
+    pub priority: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -58,11 +58,12 @@ impl DataStore {
         }
     }
 
-    pub fn new_data_source(self: &Arc<Self>, name: String, _serial: u64, priority: i64) {
+    pub fn new_data_source(self: &Arc<Self>, name: String, serial: u64, priority: i64) {
         self.datasources.lock().unwrap().insert(
             name,
             DataSource {
-                /* serial, */ priority,
+                current_serial: serial,
+                priority,
             },
         );
     }
