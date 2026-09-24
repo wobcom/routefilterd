@@ -13,9 +13,12 @@ nrtm_port = 4444
 nrtm_streaming_supported = true
 priority = 500
 
-#[data_sources.ARIN]
-#import_sources = ["data/arin.db"]
-#priority = 400
+[data_sources.ARIN]
+import_sources = ["https://ftp.arin.net/pub/rr/arin.db.gz"]
+import_serial = "https://ftp.arin.net/pub/rr/ARIN.CURRENTSERIAL"
+nrtm_host = "rr.arin.net"
+nrtm_port = 4444
+priority = 400
 
 #[data_sources.RADB]
 #import_sources = ["data/radb.db"]
