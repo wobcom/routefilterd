@@ -17,11 +17,11 @@ phf = "0.14.0"
 phf_macros = "0.14.0"
 re-delimiter-codec = "0.1.1"
 regex = "1.11.2"
-reqwest = { version = "0.13.1", features = ["stream"] }
+reqwest = { version = "0.13.1", features = ["stream", "native-tls"], default-features = false }
 rpsl-rs = "2.0.1"
 serde = { version = "1.0.226", features = ["derive"] }
 serde_json = "1.0.145"
-suppaftp = { version = "^8", features = ["async-secure", "tokio"] }
+suppaftp = { version = "^8", features = ["tokio-async-native-tls"] }
 thiserror = "2.0.18"
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
@@ -29,7 +29,7 @@ toml = "0.9.8"
 
 [dev-dependencies]
 const_format = "0.2.36"
-libunftp = "0.23.0"
+libunftp = { version = "0.23.0" }
 openport = { version = "0.4.0", features = ["rand"] }
 stringreader = "0.1.1"
 tempfile = "3.27.0"

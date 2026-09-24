@@ -2,6 +2,8 @@
   buildRustPackage,
   routefilterd-version,
   cacert,
+  openssl,
+  pkg-config,
 }:
 
 buildRustPackage rec {
@@ -11,7 +13,11 @@ buildRustPackage rec {
   cargoLock.lockFile = ./Cargo.lock;
   src = ./.;
 
+  nativeBuildInputs = [
+     pkg-config
+  ];
   buildInputs = [
      cacert
+     openssl
   ];
 }

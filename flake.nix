@@ -29,6 +29,7 @@
         libllvm
         grcov
         lcov
+        pkg-config
       ];
       coverageScript = pkgs: pkgs.writeShellApplication {
         name = "gen-coverage";
@@ -59,15 +60,18 @@
              '';
       };
     in {
-      packages = {
+      packages = rec {
         routefilterd = pkgs.routefilterd;
-        default = pkgs.routefilterd;
+        default = routefilterd;
         gen_coverage = coverageScript pkgs;
       };
       devShell = pkgs.mkShell {
         LLVM_COV = "${pkgs.libllvm}/bin/llvm-cov"; # needed for cargo-llvm-cov
         LLVM_PROFDATA = "${pkgs.libllvm}/bin/llvm-profdata"; # same as above
+
         nativeBuildInputs = minimal-dev-pkgs ++ [ pkgs.cargo-llvm-cov (coverageScript pkgs) ];
+
+        buildInputs = [ pkgs.openssl ];
       };
     }
   ));
