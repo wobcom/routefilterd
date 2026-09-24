@@ -57,7 +57,7 @@ async fn main() {
         });
     }
     // await all initial imports before proceeding
-    let _ = initial_imports.join_all().await;
+    // let _ = initial_imports.join_all().await;
 
     // start NRTM imports
     let mut nrtm_imports = JoinSet::new();
