@@ -7,20 +7,32 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }: {
-    overlay = (final: prev: let
-      cargoFile = builtins.fromTOML (builtins.readFile ./Cargo.toml);
-      pkgs = import nixpkgs {
-        inherit (final.stdenv.hostPlatform) system;
-      };
-    in
-      {
-        routefilterd = pkgs.rustPackages.rustPlatform.callPackage ./package.nix { routefilterd-version = cargoFile.package.version; };
-      });
+    overlays.default = final: prev: {
+      routefilterd = final.callPackage (
+        { rustPlatform, cacert, openssl, pkg-config }:
+
+        rustPlatform.buildRustPackage {
+            pname = "routefilterd";
+            version = self.shortRev or "dirty-${builtins.toString self.lastModifiedDate}";
+
+            cargoLock.lockFile = ./Cargo.lock;
+            src = self;
+
+            nativeBuildInputs = [
+              pkg-config
+            ];
+            buildInputs = [
+              cacert
+              openssl
+            ];
+        }
+      ) {};
+    };
   } // (flake-utils.lib.eachDefaultSystem (system:
     let
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ self.overlay ];
+        overlays = [ self.overlays.default ];
       };
       minimal-dev-pkgs = with pkgs; [
         clippy
