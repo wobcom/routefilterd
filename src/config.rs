@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::read_to_string;
+use std::path::PathBuf;
 
 #[derive(Deserialize, Clone)]
 pub struct Config {
@@ -33,7 +34,7 @@ pub struct ConfigDataSources {
     pub priority: i64,
 }
 
-pub fn parse_config(filename: String) -> Config {
+pub fn parse_config(filename: PathBuf) -> Config {
     let contents = read_to_string(filename).expect("Could not open config file");
     toml::from_str(&contents).expect("Could not parse config file")
 }

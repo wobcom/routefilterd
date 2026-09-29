@@ -1,9 +1,11 @@
 use crate::api;
+use clap::Parser;
 use log::LevelFilter;
 use log::info;
 use routefilterd::config::parse_config;
 use routefilterd::nrtm_importer::{NRTMImporter, NRTMRefreshMode};
 use routefilterd::*;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task;
@@ -12,14 +14,22 @@ use tokio_util::sync::CancellationToken;
 
 const NRTM_IMPORT_INTERVAL_MIN: u64 = 10;
 
+#[derive(clap::Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, value_name = "FILE")]
+    config: Option<PathBuf>,
+}
+
 #[tokio::main(worker_threads = 12)]
 async fn main() {
     let cancel_token = CancellationToken::new();
+    let args = Args::parse();
 
     info!("Starting routefilterd");
     info!("Preparing data..");
 
-    let config = parse_config(String::from("config.toml"));
+    let config = parse_config(args.config.unwrap_or(PathBuf::from("config.toml")));
 
     let _ = log::set_logger(&SimpleLogger).map(|()| {
         log::set_max_level(match config.log_level.as_str().trim() {
