@@ -57,7 +57,7 @@ fn test_load_correct_toml() {
     let mut temp = NamedTempFile::new().unwrap();
     temp.write_all(TEST_CORRECT_TOML.as_bytes()).unwrap();
 
-    let config = parse_config(String::from(temp.path().to_str().unwrap()));
+    let config = parse_config(temp.path().into());
 
     assert_eq!(config.api.listen_address, API_LISTEN_ADDRESS);
     assert_eq!(
@@ -80,5 +80,5 @@ fn test_load_incorrect_toml() {
     let mut temp = NamedTempFile::new().unwrap();
     temp.write_all(TEST_INCORRECT_TOML.as_bytes()).unwrap();
 
-    let _config = parse_config(String::from(temp.path().to_str().unwrap()));
+    let _config = parse_config(temp.path().into());
 }
