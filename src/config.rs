@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::path::PathBuf;
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub api: ConfigAPI,
     pub data_sources: HashMap<String, ConfigDataSources>,
@@ -11,7 +11,7 @@ pub struct Config {
     pub cache_dir: String,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct ConfigAPI {
     pub listen_address: String,
     #[serde(default = "default_recursion_depth")]
@@ -22,7 +22,7 @@ fn default_recursion_depth() -> u32 {
     64
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct ConfigDataSources {
     pub import_sources: Vec<String>,
     pub import_serial: String,

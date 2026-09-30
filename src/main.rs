@@ -44,6 +44,11 @@ async fn main() {
 
     let store = Arc::new(store::DataStore::new());
 
+    log::info!(
+        "the following data sources are configured and ready for import:\n{:?}",
+        config.data_sources
+    );
+
     // do the initial import for all sources
     let mut initial_imports = JoinSet::new();
     for (name, options) in config.data_sources.clone() {
